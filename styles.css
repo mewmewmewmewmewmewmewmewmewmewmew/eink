@@ -153,6 +153,17 @@ body[data-mode="review"] .only-live{display:none!important}
 .panel-tabs .chip[aria-expanded="true"] .chev{transform:rotate(180deg)}
 
 /* ---------- text overlay ---------- */
+.layer-row{display:flex;gap:6px;margin-bottom:7px}
+.lchip{
+  appearance:none;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);
+  font:inherit;font-size:13px;font-weight:600;
+  width:38px;height:32px;border-radius:9px;cursor:pointer;padding:0;
+}
+.lchip.is-active{border-color:var(--accent);color:var(--accent)}
+/* A layer with no text yet reads as a placeholder rather than a live caption. */
+.lchip.is-empty{border-style:dashed}
+.lchip.add{color:var(--fg);font-size:15px}
+
 .text-input-row{display:flex;gap:6px;margin-bottom:7px}
 #t-input{
   flex:1;min-width:0;appearance:none;
@@ -179,6 +190,12 @@ body[data-mode="review"] .only-live{display:none!important}
 .fchip[data-font="poster"]{font-family:Impact,Haettenschweiler,"Arial Narrow","Arial Black",sans-serif;letter-spacing:.5px}
 .fchip[data-font="round"] {font-family:"Arial Rounded MT Bold","SF Pro Rounded","Trebuchet MS",sans-serif;font-weight:700}
 .fchip[data-font="marker"]{font-family:"Bradley Hand",Chalkduster,"Segoe Script","Comic Sans MS",cursive}
+.fchip[data-font="jpGothic"]{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,"Noto Sans JP",sans-serif;font-weight:600}
+.fchip[data-font="jpMincho"]{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","MS PMincho",serif}
+.fchip[data-font="jpMaru"]  {font-family:"Hiragino Maru Gothic ProN","Tsukushi A Round Gothic","Noto Sans JP",sans-serif;font-weight:600}
+.fchip[data-font="jpKlee"]  {font-family:Klee,"Klee One","Toppan Bunkyu Midashi Mincho","Hiragino Mincho ProN",serif}
+/* Separates the Latin faces from the Japanese ones in the scrolling row. */
+.font-div{flex:0 0 auto;width:1px;background:var(--line);margin:2px 2px 8px}
 
 .swatch-row{display:flex;align-items:center;gap:7px;margin-bottom:7px}
 .swatch-row .lbl{font-size:12.5px;color:var(--muted);width:52px;flex:0 0 auto}

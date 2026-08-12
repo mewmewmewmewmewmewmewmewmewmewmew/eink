@@ -84,11 +84,18 @@ a deliberate look.
 Open the **Text** drawer, type a caption, and place it by dragging the preview;
 pinch (or use the Size slider) to resize.
 
-A **Photo / Text** pill appears over the preview as soon as there is a caption,
-and decides what drag and pinch move. Opening the Text drawer aims it at the
-caption, but it is independent of the drawers — so you can collapse them and
-position the caption against a full-size preview. It disappears, and control
-returns to the photo, when the caption is cleared.
+Up to **three captions** are supported. The numbered tabs at the top of the
+drawer switch between them and **＋** adds another; each carries its own text,
+font, size, inks and position, and they stack in order so caption 3 draws over
+caption 1. New captions start at staggered heights so they do not land on top of
+each other. The **×** removes the caption being edited (or empties it, if it is
+the only one).
+
+A pill over the preview decides what drag and pinch move. With one caption it
+reads **Photo / Text**; with more it lists them by number, so the layer being
+dragged can be switched without opening a drawer. It is independent of the
+drawers — collapse them and position a caption against a full-size preview. It
+disappears, and control returns to the photo, when no caption has any text.
 
 The caption is drawn **after** the image has been reduced to four colours, using
 palette inks directly. Putting it through the dither instead would smear the
@@ -100,12 +107,27 @@ Letters and outline each take any of the four inks; restricting the ink palette
 disables the swatches it rules out, so a caption cannot smuggle a colour into a
 two-tone panel. Outline thickness runs 0–8 px and is drawn outside the glyph.
 
-Seven faces are offered — *Sans, Serif, Slab, Mono* for straight work and
-*Poster, Round, Marker* for fun. These are **system fonts**, not webfonts, which
-keeps the app self-contained and offline-capable; the trade-off is that
-availability varies by platform. The stacks are written iOS-first (Impact,
-Arial Rounded MT Bold, Bradley Hand), and fall back to generic bold sans, serif
-or cursive elsewhere, so the playful faces look their best on an iPhone.
+Eleven faces are offered. *Sans, Serif, Slab, Mono* for straight work and
+*Poster, Round, Marker* for fun, then four Japanese faces after the divider:
+
+| Chip | Face | iOS font |
+|------|------|----------|
+| ゴシック | gothic / sans | Hiragino Sans |
+| 明朝 | mincho / serif | Hiragino Mincho ProN |
+| 丸ゴシック | round gothic | Hiragino Maru Gothic ProN |
+| 楷書 | brush | Klee |
+
+Mincho and Klee are left at regular weight: synthetic bold thickens the fine
+strokes of kanji until they close up at panel sizes. Japanese characters are
+full-width, so a caption of more than a few of them needs a smaller Size than
+the Latin equivalent — the preview shows exactly where it will clip.
+
+These are **system fonts**, not webfonts, which keeps the app self-contained and
+offline-capable; the trade-off is that availability varies by platform. The
+stacks are written iOS-first (Impact, Arial Rounded MT Bold, Bradley Hand, and
+the Hiragino family), and fall back through Android's Noto CJK to generic sans,
+serif or cursive elsewhere — so the distinctive faces look their best on an
+iPhone.
 
 ## Screen layout
 

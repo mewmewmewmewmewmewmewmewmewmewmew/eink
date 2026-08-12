@@ -159,7 +159,7 @@ function allocate() {
   indices = new Uint8Array(W * H);
   imgData = pctx.createImageData(W, H);
   dimsEl.textContent = `${W} × ${H}`;
-  textDirty = true;          // glyph size is relative to panel height
+  markAllTextDirty();        // glyph size is relative to panel height
   layoutPreview();
 }
 
@@ -495,38 +495,57 @@ const FONTS = {
   poster: '400 {S}px Impact, Haettenschweiler, "Arial Narrow", "Arial Black", sans-serif',
   round:  '700 {S}px "Arial Rounded MT Bold", "SF Pro Rounded", "Trebuchet MS", sans-serif',
   marker: '400 {S}px "Bradley Hand", Chalkduster, "Segoe Script", "Comic Sans MS", cursive',
+
+  /* Japanese. iOS ships the Hiragino family (and Klee since iOS 13); the rest
+     of each stack covers Android's Noto CJK, then Windows and older macOS.
+     Weight is left at 400 for Mincho and Klee — synthetic bold thickens the
+     fine strokes of kanji until they close up at panel sizes. */
+  jpGothic: '600 {S}px "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", YuGothic, Meiryo, "Noto Sans JP", "Noto Sans CJK JP", sans-serif',
+  jpMincho: '400 {S}px "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", "Noto Serif CJK JP", "MS PMincho", serif',
+  jpMaru:   '600 {S}px "Hiragino Maru Gothic ProN", "Tsukushi A Round Gothic", "Noto Sans JP", "Noto Sans CJK JP", sans-serif',
+  jpKlee:   '400 {S}px Klee, "Klee One", "Toppan Bunkyu Midashi Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif',
 };
 
-const text = {
-  value: '',
-  font: 'sans',
-  size: 0.26,          // fraction of panel height
-  outline: 2,          // panel pixels, outside the glyph
-  color: 1,            // palette index
-  outlineColor: 0,
-  x: 0.5, y: 0.8,      // normalised centre
-};
+const MAX_TEXTS = 3;
+/* Stagger the default position so a second and third caption do not land on
+   top of the first. */
+const LAYER_Y = [0.8, 0.5, 0.2];
+
+function newLayer(i) {
+  return {
+    value: '',
+    font: 'sans',
+    size: 0.26,          // fraction of panel height
+    outline: 2,          // panel pixels, outside the glyph
+    color: 1,            // palette index
+    outlineColor: 0,
+    x: 0.5, y: LAYER_Y[i] !== undefined ? LAYER_Y[i] : 0.5,
+    bmp: null,           // {w, h, mask, idx} in panel pixels
+    dirty: true,
+  };
+}
+
+const texts = [newLayer(0)];
+let active = 0;                       // layer being edited and dragged
+const layer = () => texts[active];
+const liveLayers = () => texts.filter(L => L.value.trim());
 
 const tcv  = document.createElement('canvas');
 const tctx = tcv.getContext('2d', { willReadFrequently: true });
 const SS = 3;          // supersample factor for glyph rasterising
 
-/* The glyphs are rasterised once into a small bitmap of palette indices and
-   then stamped at an offset, so dragging the text never re-rasterises. */
-let textBmp = null;    // {w, h, mask, idx} in panel pixels
-let textDirty = true;
+function markTextDirty() { layer().dirty = true; syncTargetUI(); kick(); }
+function markAllTextDirty() { texts.forEach(L => { L.dirty = true; }); }
 
-function markTextDirty() { textDirty = true; syncTargetUI(); kick(); }
-
-function buildTextBitmap() {
-  textDirty = false;
-  textBmp = null;
-  const s = text.value;
+function buildTextBitmap(L) {
+  L.dirty = false;
+  L.bmp = null;
+  const s = L.value;
   if (!s.trim() || !W) return;
 
-  const px = Math.max(4, text.size * H);
-  const lw = text.outline;
-  const fontCss = FONTS[text.font].replace('{S}', (px * SS).toFixed(2));
+  const px = Math.max(4, L.size * H);
+  const lw = L.outline;
+  const fontCss = (FONTS[L.font] || FONTS.sans).replace('{S}', (px * SS).toFixed(2));
 
   tctx.setTransform(1, 0, 0, 1, 0, 0);
   tctx.font = fontCss;
@@ -576,29 +595,33 @@ function buildTextBitmap() {
       tctx.lineWidth = lw * 2 * SS;
       tctx.strokeStyle = '#fff';
       tctx.strokeText(s, x, y);
-    }, text.outlineColor);
+    }, L.outlineColor);
   }
-  stamp((x, y) => { tctx.fillStyle = '#fff'; tctx.fillText(s, x, y); }, text.color);
+  stamp((x, y) => { tctx.fillStyle = '#fff'; tctx.fillText(s, x, y); }, L.color);
 
-  textBmp = { w: bw, h: bh, mask, idx };
+  L.bmp = { w: bw, h: bh, mask, idx };
 }
 
+/* Layers stamp in order, so a later caption sits over an earlier one. */
 function drawText(out) {
-  if (textDirty) buildTextBitmap();
-  if (!textBmp) return;
-  const bw = textBmp.w, bh = textBmp.h, mask = textBmp.mask, idx = textBmp.idx;
-  const ox = Math.round(text.x * W - bw / 2);
-  const oy = Math.round(text.y * H - bh / 2);
+  for (let i = 0; i < texts.length; i++) {
+    const L = texts[i];
+    if (L.dirty) buildTextBitmap(L);
+    if (!L.bmp) continue;
+    const bw = L.bmp.w, bh = L.bmp.h, mask = L.bmp.mask, idx = L.bmp.idx;
+    const ox = Math.round(L.x * W - bw / 2);
+    const oy = Math.round(L.y * H - bh / 2);
 
-  for (let y = 0; y < bh; y++) {
-    const ty = oy + y;
-    if (ty < 0 || ty >= H) continue;
-    const row = y * bw, trow = ty * W;
-    for (let x = 0; x < bw; x++) {
-      if (!mask[row + x]) continue;
-      const tx = ox + x;
-      if (tx < 0 || tx >= W) continue;
-      emit(out, trow + tx, idx[row + x]);
+    for (let y = 0; y < bh; y++) {
+      const ty = oy + y;
+      if (ty < 0 || ty >= H) continue;
+      const row = y * bw, trow = ty * W;
+      for (let x = 0; x < bw; x++) {
+        if (!mask[row + x]) continue;
+        const tx = ox + x;
+        if (tx < 0 || tx >= W) continue;
+        emit(out, trow + tx, idx[row + x]);
+      }
     }
   }
 }
@@ -608,24 +631,54 @@ function drawText(out) {
    leaving nowhere to grab for panning. The selector is independent of the
    drawers, so the caption can be placed against a full-size preview. */
 function textGesture() {
-  return state.target === 'text' && !!text.value.trim();
+  return state.target === 'text' && !!layer().value.trim();
 }
 
 function setTarget(v) {
   state.target = v;
-  document.querySelectorAll('[data-target]').forEach(b => {
-    const on = b.dataset.target === v;
+  renderTargetPill();
+}
+
+/* The pill doubles as the layer picker: with more than one caption it lists
+   them, so the layer being dragged can be switched without opening a drawer.
+   It stays out of the way entirely until there is something to aim at. */
+function renderTargetPill() {
+  const pill = $('target-seg');
+  const live = texts.map((L, i) => [L, i]).filter(([L]) => L.value.trim());
+  pill.hidden = live.length === 0;
+  if (pill.hidden) { pill.innerHTML = ''; return; }   // no stale buttons or ARIA
+
+  const wanted = ['photo'].concat(live.map(([, i]) => 'text' + i));
+  const current = [...pill.children].map(b => b.dataset.pick).join(',');
+  if (current !== wanted.join(',')) {
+    pill.innerHTML = '';
+    pill.append(mkPick('photo', 'Photo'));
+    live.forEach(([, i]) => {
+      pill.append(mkPick('text' + i, live.length > 1 ? String(i + 1) : 'Text'));
+    });
+  }
+  const sel = state.target === 'text' ? 'text' + active : 'photo';
+  [...pill.children].forEach(b => {
+    const on = b.dataset.pick === sel;
     b.classList.toggle('is-active', on);
     b.setAttribute('aria-checked', String(on));
   });
 }
 
-/* Nothing to aim at until there is a caption, so the pill stays out of the
-   way until then — and control returns to the photo if the text is cleared. */
+function mkPick(pick, label) {
+  const b = document.createElement('button');
+  b.className = 'seg-btn';
+  b.dataset.pick = pick;
+  b.setAttribute('role', 'radio');
+  b.textContent = label;
+  return b;
+}
+
+/* A caption that has been emptied can no longer be the drag target. */
 function syncTargetUI() {
-  const has = !!text.value.trim();
-  $('target-seg').hidden = !has;
-  if (!has && state.target !== 'photo') setTarget('photo');
+  if (state.target === 'text' && !layer().value.trim()) state.target = 'photo';
+  renderTargetPill();
+  renderLayerTabs();
 }
 
 function hintText() {
@@ -730,9 +783,10 @@ function clamp1(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 function setTextSize(v) {
-  text.size = Math.min(0.9, Math.max(0.06, v));
-  $('t-size').value = text.size;
-  $('ot-size').textContent = text.size.toFixed(2);
+  const L = layer();
+  L.size = Math.min(0.9, Math.max(0.06, v));
+  $('t-size').value = L.size;
+  $('ot-size').textContent = L.size.toFixed(2);
   markTextDirty();
 }
 
@@ -745,7 +799,7 @@ function bindGestures() {
     if (ptrs.size === 0) dragText = textGesture();
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size === 2) {
-      pinch = { dist: pinchDist(), zoom: state.zoom, size: text.size, onText: dragText };
+      pinch = { dist: pinchDist(), zoom: state.zoom, size: layer().size, onText: dragText };
     }
   });
 
@@ -764,8 +818,9 @@ function bindGestures() {
     } else if (dragText) {
       /* Position is applied when the bitmap is stamped, so moving the caption
          costs nothing beyond a redraw. */
-      text.x = clamp01(text.x + dx / dispScale / W);
-      text.y = clamp01(text.y + dy / dispScale / H);
+      const L = layer();
+      L.x = clamp01(L.x + dx / dispScale / W);
+      L.y = clamp01(L.y + dy / dispScale / H);
     } else {
       panBy(dx, dy);
     }
@@ -780,12 +835,10 @@ function bindGestures() {
   stage.addEventListener('pointerup', end);
   stage.addEventListener('pointercancel', end);
 
-  bindSeg('target', v => { setTarget(v); $('hint').textContent = hintText(); showHint(); });
-
   /* Desktop convenience. */
   stage.addEventListener('wheel', e => {
     e.preventDefault();
-    if (textGesture()) setTextSize(text.size * (e.deltaY < 0 ? 1.06 : 1 / 1.06));
+    if (textGesture()) setTextSize(layer().size * (e.deltaY < 0 ? 1.06 : 1 / 1.06));
     else setZoom(state.zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08));
     kick();
   }, { passive: false });
@@ -1101,7 +1154,7 @@ function applyPalette() {
 }
 
 function setSwatch(kind, i) {
-  if (kind === 'tcolor') text.color = i; else text.outlineColor = i;
+  if (kind === 'tcolor') layer().color = i; else layer().outlineColor = i;
   document.querySelectorAll(`[data-${kind}]`).forEach(b =>
     b.classList.toggle('is-active', +b.dataset[kind] === i));
   markTextDirty();
@@ -1114,17 +1167,105 @@ function syncInkSwatches() {
     const raw = b.dataset.tcolor !== undefined ? b.dataset.tcolor : b.dataset.ocolor;
     b.disabled = inks.indexOf(+raw) < 0;
   });
+  /* Every layer has to be brought inside the new ink set, not just the one
+     on screen in the drawer. */
   const fallback = inks.indexOf(1) >= 0 ? 1 : inks[0];
-  if (inks.indexOf(text.color) < 0) setSwatch('tcolor', fallback);
-  if (inks.indexOf(text.outlineColor) < 0) setSwatch('ocolor', inks[0]);
+  texts.forEach(L => {
+    if (inks.indexOf(L.color) < 0) { L.color = fallback; L.dirty = true; }
+    if (inks.indexOf(L.outlineColor) < 0) { L.outlineColor = inks[0]; L.dirty = true; }
+  });
+  syncTextControls();
+  kick();
+}
+
+/* The drawer always edits one layer; these push the active layer's settings
+   into the controls when the selection changes. */
+function syncTextControls() {
+  const L = layer();
+  $('t-input').value = L.value;
+  $('t-size').value = L.size;
+  $('ot-size').textContent = L.size.toFixed(2);
+  $('t-outline').value = L.outline;
+  $('ot-outline').textContent = String(L.outline).replace(/\.0$/, '');
+  document.querySelectorAll('[data-font]').forEach(b => {
+    const on = b.dataset.font === L.font;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  document.querySelectorAll('[data-tcolor]').forEach(b =>
+    b.classList.toggle('is-active', +b.dataset.tcolor === L.color));
+  document.querySelectorAll('[data-ocolor]').forEach(b =>
+    b.classList.toggle('is-active', +b.dataset.ocolor === L.outlineColor));
+}
+
+function renderLayerTabs() {
+  const row = $('layer-tabs');
+  if (!row) return;
+  row.innerHTML = '';
+  texts.forEach((L, i) => {
+    const b = document.createElement('button');
+    b.className = 'lchip' + (i === active ? ' is-active' : '') +
+                  (L.value.trim() ? '' : ' is-empty');
+    b.textContent = String(i + 1);
+    b.setAttribute('aria-label', `Caption ${i + 1}`);
+    b.addEventListener('click', () => selectLayer(i));
+    row.append(b);
+  });
+  if (texts.length < MAX_TEXTS) {
+    const add = document.createElement('button');
+    add.className = 'lchip add';
+    add.textContent = '＋';
+    add.setAttribute('aria-label', 'Add caption');
+    add.addEventListener('click', addLayer);
+    row.append(add);
+  }
+  const del = $('t-clear');
+  del.setAttribute('aria-label', texts.length > 1 ? 'Remove this caption' : 'Clear caption');
+}
+
+function selectLayer(i) {
+  active = i;
+  syncTextControls();
+  setTarget(layer().value.trim() ? 'text' : 'photo');
+  renderLayerTabs();
+  kick();
+}
+
+function addLayer() {
+  if (texts.length >= MAX_TEXTS) return;
+  texts.push(newLayer(texts.length));
+  selectLayer(texts.length - 1);
+  $('t-input').focus();
+}
+
+/* With more than one caption the button removes this layer outright; with a
+   single one there is nothing to remove, so it just empties it. */
+function removeLayer() {
+  if (texts.length > 1) {
+    texts.splice(active, 1);
+    active = Math.min(active, texts.length - 1);
+  } else {
+    texts[0] = newLayer(0);
+  }
+  syncTextControls();
+  syncTargetUI();
+  kick();
+  $('t-input').focus();
 }
 
 function bindTextControls() {
   const input = $('t-input');
-  input.addEventListener('input', () => { text.value = input.value; markTextDirty(); });
-  $('t-clear').addEventListener('click', () => {
-    input.value = ''; text.value = ''; markTextDirty(); input.focus();
+  input.addEventListener('input', () => {
+    const L = layer();
+    const had = !!L.value.trim();
+    L.value = input.value;
+    /* Typing the first characters of a caption takes aim at it, so a drag
+       straight afterwards moves the new text rather than the photo. After
+       that the pill is in charge and this stays out of the way. */
+    if (!had && L.value.trim()) setTarget('text');
+    markTextDirty();
   });
+  $('t-clear').addEventListener('click', removeLayer);
 
   document.querySelectorAll('[data-font]').forEach(b => {
     b.addEventListener('click', () => {
@@ -1134,7 +1275,7 @@ function bindTextControls() {
       });
       b.classList.add('is-active');
       b.setAttribute('aria-checked', 'true');
-      text.font = b.dataset.font;
+      layer().font = b.dataset.font;
       markTextDirty();
     });
   });
@@ -1148,10 +1289,30 @@ function bindTextControls() {
   size.addEventListener('input', () => setTextSize(parseFloat(size.value)));
   const outline = $('t-outline');
   outline.addEventListener('input', () => {
-    text.outline = parseFloat(outline.value);
-    $('ot-outline').textContent = text.outline.toFixed(1).replace(/\.0$/, '');
+    layer().outline = parseFloat(outline.value);
+    $('ot-outline').textContent = outline.value.replace(/\.0$/, '');
     markTextDirty();
   });
+
+  /* The pill's buttons are rebuilt as captions come and go, so it is bound
+     once by delegation rather than per button. */
+  $('target-seg').addEventListener('click', e => {
+    const btn = e.target.closest('[data-pick]');
+    if (!btn) return;
+    const pick = btn.dataset.pick;
+    if (pick === 'photo') { setTarget('photo'); }
+    else {
+      active = +pick.slice(4);
+      syncTextControls();
+      renderLayerTabs();
+      setTarget('text');
+    }
+    $('hint').textContent = hintText();
+    showHint();
+  });
+
+  renderLayerTabs();
+  syncTextControls();
 }
 
 /* Only one drawer open at a time — both are tall, and the preview needs the
@@ -1167,7 +1328,7 @@ function togglePanel(which) {
   /* Opening the text drawer aims the gestures at the caption; closing it
      leaves them there, so the caption can be finished against a full preview.
      Closing the drawer is not a reason to change what you were editing. */
-  if (openTxt) setTarget('text');
+  if (openTxt && layer().value.trim()) setTarget('text');
   layoutPreview();
   $('hint').textContent = hintText();
   showHint();
