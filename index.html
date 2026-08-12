@@ -192,9 +192,8 @@
       <button id="btn-back" class="icon-btn only-review" title="Back to camera" aria-label="Back to camera">
         <svg viewBox="0 0 24 24"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
       </button>
-      <button id="btn-gallery" class="icon-btn" title="Recent shots" aria-label="Recent shots">
-        <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 9h10v2H7zM7 13h6v2H7z"/></svg>
-        <span id="gallery-count" class="badge" hidden>0</span>
+      <button id="btn-projects" class="icon-btn" title="Saved projects" aria-label="Saved projects">
+        <svg viewBox="0 0 24 24"><path d="M4 4h6l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
       </button>
     </div>
 
@@ -218,6 +217,7 @@
 <div id="save-sheet" class="overlay" hidden>
   <div class="sheet">
     <div class="sheet-title">Save <span id="shot-meta"></span></div>
+    <button id="btn-save-project" class="btn">Save project <small>keeps layers editable</small></button>
     <button id="btn-photos" class="btn btn-primary" hidden>Save to Photos</button>
     <button id="btn-png" class="btn">Download PNG</button>
     <button id="btn-bin" class="btn">Download .bin <small>2bpp packed</small></button>
@@ -225,12 +225,12 @@
   </div>
 </div>
 
-<!-- Gallery -->
-<div id="gallery" class="overlay" hidden>
+<!-- Saved projects -->
+<div id="projects" class="overlay" hidden>
   <div class="overlay-inner">
-    <div class="overlay-title">Recent shots <button id="btn-gallery-close" class="text-btn">Close</button></div>
-    <div id="gallery-grid"></div>
-    <button id="btn-gallery-clear" class="btn">Clear all</button>
+    <div class="overlay-title">Saved projects <button id="btn-projects-close" class="text-btn">Close</button></div>
+    <p class="overlay-note">Tap a project to carry on editing it — background, crop and captions all come back.</p>
+    <div id="projects-grid"></div>
   </div>
 </div>
 
@@ -244,10 +244,12 @@
       <p><b>Diffuse / Atkinson</b> spread the quantisation error into neighbouring pixels for photographic texture. <b>Ordered</b> uses a fixed 8×8 pattern. <b>Flat</b> does no dithering. The <b>ink palette</b> row restricts which of the four colours may be used.</p>
       <p><b>Crop and rotate:</b> drag to reposition, pinch to zoom, and use ↺ ↻ to rotate. Gestures work anywhere in the preview area, including the space beside a narrow portrait panel. This works on the live view, on a photo you have just taken, and on any photo you upload.</p>
       <p><b>Text</b> is drawn after the image is reduced to four colours, so captions stay sharp instead of dissolving into the dither. Pick any ink for the letters and the outline, set the outline thickness, then use the <b>Photo / Text</b> pill over the preview to choose what dragging and pinching move, so the caption can be placed against a full-size preview. Up to three captions are supported — the numbered tabs switch between them, and each keeps its own text, font, size, inks and position. Fonts come from the device, including four Japanese faces, so the distinctive ones look their best on iOS.</p>
-      <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Download PNG</b> writes the image at exact panel resolution. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
+      <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Save project</b> keeps the shot editable — the background, the crop and every caption come back when you reopen it from the folder button. <b>Download PNG</b> writes the image at exact panel resolution. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
     </div>
   </div>
 </div>
+
+<div id="toast" role="status" aria-live="polite"></div>
 
 <video id="video" playsinline muted autoplay></video>
 

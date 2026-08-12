@@ -981,7 +981,6 @@ function download(blob, name) {
 async function savePNG() {
   const blob = await pngBlob();
   if (blob) download(blob, baseName() + '.png');
-  saveToGallery();
   closeSheet();
 }
 
@@ -1000,7 +999,6 @@ function packBin() {
 
 function saveBIN() {
   download(new Blob([packBin()], { type: 'application/octet-stream' }), baseName() + '.bin');
-  saveToGallery();
   closeSheet();
 }
 
@@ -1023,7 +1021,7 @@ function prepareShareFile() {
 
 function saveToPhotos() {
   if (!pendingFile) return;                 // still encoding; tap again
-  const done = () => { saveToGallery(); closeSheet(); };
+  const done = () => closeSheet();
   navigator.share({ files: [pendingFile], title: 'E-Ink photo' })
     .then(done)
     .catch(() => closeSheet());             // user cancelled the sheet
@@ -1051,59 +1049,220 @@ function openSheet() {
 function closeSheet() { $('save-sheet').hidden = true; }
 
 /* ---------------------------------------------------------------- gallery */
-const GKEY = 'einkcam.shots';
-const GMAX = 24;
+/* --------------------------------------------------------------- projects */
+/* A project is the editable state of a shot: the full-resolution background
+   plus the crop, the adjustments and every caption — not the flattened
+   4-colour export. Backgrounds run to hundreds of KB, well past what
+   localStorage will hold, so they live in IndexedDB as Blobs. */
+const DB_NAME = 'einkcam', DB_VER = 1, STORE = 'projects';
+const PROJ_MAX = 12;
 
-function loadGallery() {
-  try { return JSON.parse(localStorage.getItem(GKEY)) || []; }
-  catch (_) { return []; }
+function idb() {
+  return new Promise((res, rej) => {
+    let r;
+    try { r = indexedDB.open(DB_NAME, DB_VER); }
+    catch (e) { return rej(e); }
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
 }
-function storeGallery(list) {
-  try { localStorage.setItem(GKEY, JSON.stringify(list)); }
-  catch (_) { /* quota — drop silently */ }
-  updateGalleryBadge(list.length);
+
+async function idbRun(mode, fn) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, mode);
+    const out = fn(tx.objectStore(STORE));
+    tx.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error);
+  });
 }
-function updateGalleryBadge(n) {
-  const el = $('gallery-count');
-  el.textContent = n;
-  el.hidden = n === 0;
+
+const listProjects  = () => idbRun('readonly',  s => s.getAll());
+const putProject    = r  => idbRun('readwrite', s => s.put(r));
+const deleteProject = id => idbRun('readwrite', s => s.delete(id));
+
+/* Lossless when it is affordable, JPEG when it is not.
+
+   Error diffusion is chaotic — shifting one source pixel by a single level can
+   flip a dot and cascade — so a lossy background comes back with a slightly
+   different dither pattern (under 1% of pixels, invisible, but not identical).
+   Graphics and screenshots compress small as PNG and round-trip exactly;
+   camera photos run to several megabytes, where JPEG is the sane trade for
+   holding a dozen projects. */
+const LOSSLESS_LIMIT = 1.5e6;
+
+function encode(canvas, type, q) {
+  return new Promise(res => canvas.toBlob(res, type, q));
 }
-function saveToGallery() {
-  const list = loadGallery();
-  list.unshift({ t: Date.now(), w: W, h: H, d: preview.toDataURL('image/png') });
-  storeGallery(list.slice(0, GMAX));
+
+async function sourceBlob() {
+  const { el, w, h } = lastSource;
+  let canvas = el;
+  if (!el.toBlob) {
+    canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(el, 0, 0, w, h);
+  }
+  const png = await encode(canvas, 'image/png');
+  if (png && png.size <= LOSSLESS_LIMIT) return png;
+  return encode(canvas, 'image/jpeg', 0.95);
 }
-function renderGallery() {
-  const grid = $('gallery-grid');
-  const list = loadGallery();
+
+/* bmp and dirty are derived from the rest, so they are not persisted. */
+function serialiseTexts() {
+  return texts.map(L => ({
+    value: L.value, font: L.font, size: L.size, outline: L.outline,
+    color: L.color, outlineColor: L.outlineColor, x: L.x, y: L.y,
+  }));
+}
+
+async function saveProject() {
+  if (mode !== 'review' || !lastSource) return;
+  const blob = await sourceBlob();
+  if (!blob) { toast('Could not save this image'); return; }
+
+  const rec = {
+    id: Date.now(),
+    w: W, h: H,
+    thumb: preview.toDataURL('image/png'),
+    state: Object.assign({}, state),
+    view: Object.assign({}, view),
+    texts: serialiseTexts(),
+    active,
+    blob,
+  };
+
+  try {
+    await putProject(rec);
+    const all = await listProjects();
+    all.sort((a, b) => b.id - a.id);
+    for (const old of all.slice(PROJ_MAX)) await deleteProject(old.id);
+    toast('Project saved');
+  } catch (_) {
+    toast('Could not save — storage unavailable');
+  }
+  closeSheet();
+}
+
+/* Push a restored project back through every control, so the drawers agree
+   with what is on screen. */
+function applyProjectState(rec) {
+  Object.assign(state, rec.state);
+  Object.assign(view, rec.view);
+
+  texts.length = 0;
+  (rec.texts && rec.texts.length ? rec.texts : [{}]).forEach((t, i) => {
+    texts.push(Object.assign(newLayer(i), t, { bmp: null, dirty: true }));
+  });
+  active = Math.min(rec.active || 0, texts.length - 1);
+
+  ['size', 'orient', 'style', 'dither', 'palette'].forEach(k => setSeg(k, state[k]));
+  SLIDERS.forEach(([id, key, fmt]) => {
+    $(id).value = state[key];
+    $(id.replace('s-', 'o-')).textContent = fmt(state[key]);
+  });
+
+  applyPalette();
+  buildLUT();
+  syncStyleUI();
+  syncFlip();
+  applySize();            // re-allocates buffers and marks the captions dirty
+  syncTextControls();
+  renderLayerTabs();
+  renderTargetPill();
+}
+
+function setSeg(attr, value) {
+  document.querySelectorAll(`[data-${attr}]`).forEach(b => {
+    const on = b.dataset[attr] === String(value);
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+}
+
+let srcUrl = null;
+
+async function openProject(rec) {
+  const url = URL.createObjectURL(rec.blob);
+  const img = new Image();
+  img.src = url;
+  try {
+    await (img.decode ? img.decode() : new Promise(ok => { img.onload = ok; }));
+  } catch (_) {
+    URL.revokeObjectURL(url);
+    toast('Could not open that project');
+    return;
+  }
+  stopCamera();
+  if (srcUrl) URL.revokeObjectURL(srcUrl);
+  srcUrl = url;
+
+  applyProjectState(rec);
+  lastSource = { el: img, w: img.naturalWidth, h: img.naturalHeight };
+  $('projects').hidden = true;
+  setMode('review');
+}
+
+async function renderProjects() {
+  const grid = $('projects-grid');
   grid.innerHTML = '';
-  if (!list.length) {
+  let list = [];
+  try { list = await listProjects(); }
+  catch (_) {
     const p = document.createElement('p');
-    p.textContent = 'No shots yet.';
+    p.textContent = 'Saved projects are unavailable in this browser.';
     grid.appendChild(p);
     return;
   }
-  list.forEach((item, i) => {
+  list.sort((a, b) => b.id - a.id);
+
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.textContent = 'No saved projects yet. Take or upload a photo, then Save · Project.';
+    grid.appendChild(p);
+    return;
+  }
+
+  list.forEach(rec => {
     const fig = document.createElement('figure');
     const img = document.createElement('img');
-    img.src = item.d;
-    img.alt = `${item.w}×${item.h}`;
-    img.addEventListener('click', () => {
-      const a = document.createElement('a');
-      a.href = item.d;
-      a.download = `eink-${item.w}x${item.h}-${item.t}.png`;
-      a.click();
-    });
+    img.src = rec.thumb;
+    img.alt = '';
+    const meta = document.createElement('figcaption');
+    const caps = (rec.texts || []).filter(t => t.value && t.value.trim()).length;
+    const d = new Date(rec.id);
+    const p2 = n => String(n).padStart(2, '0');
+    meta.textContent = `${rec.w}×${rec.h} · ${caps} caption${caps === 1 ? '' : 's'}` +
+      ` · ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+
+    const open = document.createElement('button');
+    open.className = 'proj-open';
+    open.setAttribute('aria-label', 'Open project');
+    open.addEventListener('click', () => openProject(rec));
+
     const del = document.createElement('button');
     del.className = 'del';
     del.textContent = '×';
-    del.setAttribute('aria-label', 'Delete');
-    del.addEventListener('click', () => {
-      const l = loadGallery(); l.splice(i, 1); storeGallery(l); renderGallery();
-    });
-    fig.append(img, del);
+    del.setAttribute('aria-label', 'Delete project');
+    del.addEventListener('click', async () => { await deleteProject(rec.id); renderProjects(); });
+
+    fig.append(img, meta, open, del);
     grid.appendChild(fig);
   });
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
 
 /* -------------------------------------------------------------------- UI */
@@ -1421,11 +1580,9 @@ function wire() {
     e.target.value = '';
   });
 
-  $('btn-gallery').addEventListener('click', () => { renderGallery(); $('gallery').hidden = false; });
-  $('btn-gallery-close').addEventListener('click', () => { $('gallery').hidden = true; });
-  $('btn-gallery-clear').addEventListener('click', () => {
-    localStorage.removeItem(GKEY); updateGalleryBadge(0); renderGallery();
-  });
+  $('btn-projects').addEventListener('click', () => { renderProjects(); $('projects').hidden = false; });
+  $('btn-projects-close').addEventListener('click', () => { $('projects').hidden = true; });
+  $('btn-save-project').addEventListener('click', saveProject);
 
   $('btn-help').addEventListener('click', () => { $('help').hidden = false; });
   $('btn-help-close').addEventListener('click', () => { $('help').hidden = true; });
@@ -1447,7 +1604,6 @@ function wire() {
 applySize();
 wire();
 syncFlip();
-updateGalleryBadge(loadGallery().length);
 startCamera();
 requestAnimationFrame(loop);
 

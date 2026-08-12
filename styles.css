@@ -314,17 +314,37 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
   background:var(--panel-2);padding:1px 5px;border-radius:4px;color:var(--fg);
 }
 
-#gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
-#gallery-grid figure{margin:0;position:relative}
-#gallery-grid img{
-  width:100%;display:block;image-rendering:pixelated;border-radius:5px;
+.overlay-note{color:var(--muted);font-size:13px;margin:-6px 0 0;line-height:1.5}
+#projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+#projects-grid figure{margin:0;position:relative}
+#projects-grid img{
+  width:100%;display:block;image-rendering:pixelated;border-radius:6px;
   box-shadow:0 0 0 1px var(--line);background:#000;
 }
-#gallery-grid .del{
-  position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;
-  background:rgba(0,0,0,.65);color:#fff;border:0;font-size:13px;line-height:1;cursor:pointer;
+#projects-grid figcaption{
+  font:10.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:var(--muted);margin-top:5px;
 }
-#gallery-grid p{color:var(--muted);font-size:13px;grid-column:1/-1;text-align:center;margin:20px 0}
+/* Transparent hit target over the thumbnail, so the delete button on top of
+   it stays clickable. */
+#projects-grid .proj-open{
+  position:absolute;inset:0;bottom:22px;width:100%;
+  background:transparent;border:0;border-radius:6px;cursor:pointer;padding:0;
+}
+#projects-grid .del{
+  position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;
+  background:rgba(0,0,0,.7);color:#fff;border:0;font-size:14px;line-height:1;cursor:pointer;
+}
+#projects-grid p{color:var(--muted);font-size:13px;grid-column:1/-1;text-align:center;margin:20px 0;line-height:1.6}
+
+#toast{
+  position:fixed;left:50%;bottom:calc(96px + var(--safe-b));transform:translateX(-50%) translateY(8px);
+  z-index:40;pointer-events:none;
+  background:rgba(30,33,38,.96);color:var(--fg);border:1px solid var(--line);
+  padding:10px 16px;border-radius:11px;font-size:13.5px;white-space:nowrap;
+  opacity:0;transition:opacity .18s,transform .18s;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 @media (max-height:680px){
   #shutter,#btn-save{width:56px;height:56px}

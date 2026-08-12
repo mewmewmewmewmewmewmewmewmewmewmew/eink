@@ -148,6 +148,9 @@ error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, an
 
 ## Saving
 
+- **Save project** — stores the shot as an **editable** state: the
+  full-resolution background, the crop and rotation, every adjustment and all
+  the captions. Reopen it from the folder button and carry on editing.
 - **Save to Photos** — opens the system share sheet. On iPhone this is the only
   route from a web page into the photo album: choose *Save Image* and it lands in
   Photos rather than in Files. Shown wherever the browser can share files (as
@@ -155,7 +158,15 @@ error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, an
 - **Download PNG** — exact panel resolution, 4 colours, no resampling.
 - **Download .bin** — packed 2 bits per pixel for direct upload to a panel.
 
-Saved shots are also kept in `localStorage` (last 24); tap one to download again.
+Projects live in IndexedDB (the last 12), because a background at camera
+resolution is far past what `localStorage` will hold. The background is stored
+losslessly as PNG when that comes in under 1.5 MB — graphics and screenshots
+usually do, and reopen bit-identically — and as high-quality JPEG when it does
+not, which is the normal case for camera photos. Error diffusion is chaotic
+enough that a single-level change in the source can flip a dot and cascade, so
+a JPEG-backed project comes back with under 1% of its dither pixels rearranged:
+invisible, but not bit-identical. Panel size, crop, captions and every setting
+restore exactly either way.
 
 Safari only permits `navigator.share()` directly from a user gesture, so the PNG
 is encoded when the save sheet opens and the button shares the ready-made file —
