@@ -1440,7 +1440,9 @@ let pendingFile = null;
 
 function prepareShareFile() {
   pendingFile = null;
-  preview.toBlob(blob => {
+  /* exportCanvas(), not the preview: sharing has to go through the same
+     rotation into the panel's native frame that the downloads do. */
+  exportCanvas().toBlob(blob => {
     if (blob) pendingFile = new File([blob], baseName() + '.png', { type: 'image/png' });
   }, 'image/png');
 }
