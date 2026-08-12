@@ -97,7 +97,7 @@ availability varies by platform. The stacks are written iOS-first (Impact,
 Arial Rounded MT Bold, Bradley Hand), and fall back to generic bold sans, serif
 or cursive elsewhere, so the playful faces look their best on an iPhone.
 
-## Layout
+## Screen layout
 
 The controls drawer is capped at 40% of the viewport and scrolls internally
 rather than growing to fit its contents. Left to size itself it reached 410px on
@@ -146,7 +146,7 @@ This is the layout most Waveshare-style 4-colour panels expect. If yours uses a
 different code order, remap it by reordering `PALETTE` in `app.js` — the array
 index *is* the code written to the file.
 
-## Layout
+## Files
 
 ```
 index.html    markup and controls
