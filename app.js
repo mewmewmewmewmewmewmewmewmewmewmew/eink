@@ -1397,7 +1397,9 @@ function download(blob, name) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  /* iOS hands the blob URL to its download manager and may fetch it a moment
+     later, so the URL outlives the click by a generous margin. */
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 async function savePNG() {
@@ -1476,6 +1478,7 @@ function openSheet() {
     setSeg('exportrot', state.exportRot);
   }
 
+  $('ios-note').hidden = !IOS;
   $('save-sheet').hidden = false;
   if (sharable) prepareShareFile();
 }
@@ -2265,6 +2268,11 @@ function wire() {
     const btn = $('btn-photos');
     btn.hidden = false;
     btn.textContent = IOS ? 'Save to Photos' : 'Share image';
+    if (IOS) {
+      const hint = document.createElement('small');
+      hint.textContent = ' the same sheet also offers Files and other apps';
+      btn.append(hint);
+    }
     btn.addEventListener('click', saveToPhotos);
   }
 

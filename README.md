@@ -146,6 +146,22 @@ Panel apps generally re-process whatever you upload, which can undo the work:
   only 26% of pixels still exactly on-palette. If a step in the chain
   re-encodes as JPEG, no dithering setting downstream can recover it.
 
+### Saving on the phone the panel app runs on
+
+Either route works, and both leave the pixels untouched on the way out:
+
+- **Download** lands the file in Files, byte-exact.
+- **Save to Photos** goes through the share sheet, which also offers *Save to
+  Files* and any app that accepts an image — including, possibly, the panel app
+  itself.
+
+The risk is not in saving, it is in reading back: some apps re-encode whatever
+they pull out of the photo library, which is exactly what turns four colours
+into thousands. That is a property of the reading app, not of Photos. If a
+panel result looks muddy, save the image and run it through **About › Check a
+file** — if that still reports four colours the library is not the problem, and
+if it does not, Download to Files instead.
+
 ### Checking a file
 
 Judging this by eye on a phone does not work. Zooming interpolates, and iOS
