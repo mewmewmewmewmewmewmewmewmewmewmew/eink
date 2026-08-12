@@ -149,7 +149,6 @@ const state = {
   weight: 1,
   zoom: 1,
   exportRot: 'cw',     // which way a portrait composition turns for export
-  format: 'png',       // 'png' (4-colour indexed) or 'bmp' (24-bit uncompressed)
   facing: 'environment',
   target: 'photo',     // what drag and pinch act on: 'photo' | 'text'
 };
@@ -176,7 +175,6 @@ const preview  = $('preview');
 const pctx     = preview.getContext('2d');
 const stage    = $('stage');
 const statusEl = $('status');
-const dimsEl   = $('dims');
 
 /* Off-screen canvases: two scratch buffers ping-pong for progressive
    downscaling (big -> small in halving steps keeps detail and avoids the
@@ -220,7 +218,6 @@ function allocate() {
   mask = new Uint8Array(W * H);
   maskInk = new Uint8Array(W * H);
   imgData = pctx.createImageData(W, H);
-  dimsEl.textContent = `${W} × ${H}`;
   markAllTextDirty();        // glyph size is relative to panel height
   layoutPreview();
 }
@@ -319,10 +316,16 @@ function quantize(mode_, amt) {
     const mask = mode_ === 'bayer' ? 7 : 3;
     const shift = mode_ === 'bayer' ? 3 : 2;
     const spreadAmt = (mode_ === 'bayer' ? 110 : 150) * amt;
+    /* Sampling the screen matrix through a divisor grows the cell without
+       needing a bigger matrix: at scale 3 each matrix entry covers a 3x3
+       block, so the dots get coarser while keeping their clustered shape. */
+    const sc = mode_ === 'cluster' ? Math.max(1, Math.round(state.detail / 3.5)) : 1;
     for (let y = 0; y < H; y++) {
+      const sy = sc === 1 ? y : Math.floor(y / sc);
       for (let x = 0; x < W; x++) {
+        const sx = sc === 1 ? x : Math.floor(x / sc);
         const j = (y * W + x) * 3;
-        const t = ordered[((y & mask) << shift) + (x & mask)] * spreadAmt;
+        const t = ordered[((sy & mask) << shift) + (sx & mask)] * spreadAmt;
         const idx = nearest(buf[j] + t, buf[j + 1] + t, buf[j + 2] + t);
         emit(out, y * W + x, idx);
       }
@@ -779,6 +782,8 @@ function newLayer(i) {
     color: 1,            // palette index
     outlineColor: 0,
     x: 0.5, y: LAYER_Y[i] !== undefined ? LAYER_Y[i] : 0.5,
+    angle: 0,            // degrees, clockwise
+    vertical: false,     // one character per line
     bmp: null,           // {w, h, mask, idx} in panel pixels
     dirty: true,
   };
@@ -799,8 +804,8 @@ function markAllTextDirty() { texts.forEach(L => { L.dirty = true; }); }
 function buildTextBitmap(L) {
   L.dirty = false;
   L.bmp = null;
-  const s = L.value;
-  if (!s.trim() || !W) return;
+  const str = L.value;
+  if (!str.trim() || !W) return;
 
   const px = Math.max(4, L.size * H);
   const lw = L.outline;
@@ -808,10 +813,27 @@ function buildTextBitmap(L) {
 
   tctx.setTransform(1, 0, 0, 1, 0, 0);
   tctx.font = fontCss;
-  const measured = tctx.measureText(s).width / SS;
 
-  const bw = Math.ceil(measured + lw * 2 + 6);
-  const bh = Math.ceil(px * 1.5 + lw * 2 + 6);
+  /* Vertical writing stacks one character per line, the way Japanese
+     tategaki runs — not a rotated line of horizontal text. */
+  const chars = L.vertical ? Array.from(str.replace(/\s+/g, '')) : null;
+  const lineH = px * 1.12;
+  let cw0, ch0;
+  if (chars) {
+    let widest = 0;
+    for (const ch of chars) widest = Math.max(widest, tctx.measureText(ch).width / SS);
+    cw0 = widest + lw * 2 + 6;
+    ch0 = chars.length * lineH + lw * 2 + 6;
+  } else {
+    cw0 = tctx.measureText(str).width / SS + lw * 2 + 6;
+    ch0 = px * 1.5 + lw * 2 + 6;
+  }
+
+  /* The bitmap has to hold the rotated extent, not the upright one. */
+  const rad = ((L.angle || 0) * Math.PI) / 180;
+  const ca = Math.abs(Math.cos(rad)), sa = Math.abs(Math.sin(rad));
+  const bw = Math.ceil(cw0 * ca + ch0 * sa);
+  const bh = Math.ceil(cw0 * sa + ch0 * ca);
   if (bw < 1 || bh < 1 || bw * bh > 4e6) return;
 
   const cw = bw * SS, ch = bh * SS;
@@ -824,7 +846,7 @@ function buildTextBitmap(L) {
   /* Canvas antialiases text, but a 4-colour panel has no intermediate shades
      to put it in. Rasterising at 3x and keeping pixels with at least half
      coverage gives well-shaped letterforms with hard, on-palette edges. */
-  const stamp = (draw, ink) => {
+  const stamp = (paint, ink) => {
     tctx.setTransform(1, 0, 0, 1, 0, 0);
     tctx.clearRect(0, 0, cw, ch);
     tctx.font = fontCss;
@@ -832,7 +854,17 @@ function buildTextBitmap(L) {
     tctx.textBaseline = 'middle';
     tctx.lineJoin = 'round';
     tctx.miterLimit = 2;
-    draw(cw / 2, ch / 2);
+    tctx.translate(cw / 2, ch / 2);
+    if (rad) tctx.rotate(rad);
+
+    if (chars) {
+      const step = lineH * SS;
+      let y = -(chars.length - 1) * step / 2;
+      for (const chr of chars) { paint(chr, 0, y); y += step; }
+    } else {
+      paint(str, 0, 0);
+    }
+    tctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const d = tctx.getImageData(0, 0, cw, ch).data;
     for (let y = 0; y < bh; y++) {
@@ -850,13 +882,14 @@ function buildTextBitmap(L) {
   /* Stroke first, fill over it: lineWidth is doubled so half the stroke sits
      outside the glyph and the fill covers the half that sits inside. */
   if (lw > 0) {
-    stamp((x, y) => {
+    tctx.lineWidth = lw * 2 * SS;
+    stamp((t, x, y) => {
       tctx.lineWidth = lw * 2 * SS;
       tctx.strokeStyle = '#fff';
-      tctx.strokeText(s, x, y);
+      tctx.strokeText(t, x, y);
     }, L.outlineColor);
   }
-  stamp((x, y) => { tctx.fillStyle = '#fff'; tctx.fillText(s, x, y); }, L.color);
+  stamp((t, x, y) => { tctx.fillStyle = '#fff'; tctx.fillText(t, x, y); }, L.color);
 
   L.bmp = { w: bw, h: bh, mask, idx };
 }
@@ -1254,6 +1287,20 @@ function showHint() {
 }
 
 /* ------------------------------------------------------------------ sizes */
+/* Switching orientation turns the whole composition, not just the frame:
+   the crop rotates and every caption travels with it, keeping its place on
+   the picture and its own reading direction. */
+function turnComposition(deg) {
+  view.rot = (view.rot + deg + 360) % 360;
+  const cw = deg > 0;
+  texts.forEach(L => {
+    const x = L.x, y = L.y;
+    if (cw) { L.x = 1 - y; L.y = x; } else { L.x = y; L.y = 1 - x; }
+    L.angle = (((L.angle || 0) + deg) % 360 + 540) % 360 - 180;
+    L.dirty = true;
+  });
+}
+
 function applySize() {
   const [a, b] = SIZES[state.size];
   if (state.orient === 'portrait') { W = b; H = a; } else { W = a; H = b; }
@@ -1436,52 +1483,10 @@ function indexedPngBlob() {
   return new Blob(parts, { type: 'image/png' });
 }
 
-/* 24-bit uncompressed BMP: bottom-up rows, BGR order, each row padded to a
-   4-byte boundary. No compression and no palette indirection, so the bytes on
-   disk are literally the colours — which is about as unambiguous as an image
-   file gets for hardware that wants exactly four of them. */
-function bmpBlob() {
-  const v = exportView();
-  const rowRaw = v.w * 3;
-  const rowPad = (4 - (rowRaw % 4)) % 4;
-  const rowSize = rowRaw + rowPad;
-  const pixels = rowSize * v.h;
-  const offset = 14 + 40;
-  const out = new Uint8Array(offset + pixels);
-  const dv = new DataView(out.buffer);
 
-  out[0] = 0x42; out[1] = 0x4D;                 // 'BM'
-  dv.setUint32(2, out.length, true);
-  dv.setUint32(10, offset, true);
+function exportBlob() { return Promise.resolve(indexedPngBlob()); }
 
-  dv.setUint32(14, 40, true);                   // BITMAPINFOHEADER
-  dv.setInt32(18, v.w, true);
-  dv.setInt32(22, v.h, true);                   // positive: bottom-up
-  dv.setUint16(26, 1, true);                    // planes
-  dv.setUint16(28, 24, true);                   // bits per pixel
-  dv.setUint32(30, 0, true);                    // BI_RGB, uncompressed
-  dv.setUint32(34, pixels, true);
-  dv.setInt32(38, 2835, true);                  // ~72 dpi
-  dv.setInt32(42, 2835, true);
-
-  for (let y = 0; y < v.h; y++) {
-    const src = (v.h - 1 - y) * v.w;            // BMP stores the last row first
-    let o = offset + y * rowSize;
-    for (let x = 0; x < v.w; x++) {
-      const c = v.idx[src + x] * 3;
-      out[o++] = PAL_FLAT[c + 2];               // B
-      out[o++] = PAL_FLAT[c + 1];               // G
-      out[o++] = PAL_FLAT[c];                   // R
-    }
-  }
-  return new Blob([out], { type: 'image/bmp' });
-}
-
-function exportBlob() {
-  return state.format === 'bmp' ? Promise.resolve(bmpBlob()) : Promise.resolve(indexedPngBlob());
-}
-
-function exportExt() { return state.format === 'bmp' ? '.bmp' : '.png'; }
+function exportExt() { return '.png'; }
 
 async function saveFile() {
   const blob = await exportBlob();
@@ -1559,11 +1564,6 @@ function openSheet() {
     setSeg('exportrot', state.exportRot);
   }
 
-  setSeg('format', state.format);
-  $('btn-download').textContent = state.format === 'bmp'
-    ? 'Download .bmp' : 'Download .png';
-  $('bmp-note').hidden = !(IOS && state.format === 'bmp');
-  $('ios-note').hidden = !IOS;
   $('save-sheet').hidden = false;
   if (sharable) prepareShareFile();
 }
@@ -1685,6 +1685,7 @@ function serialiseTexts() {
   return texts.map(L => ({
     value: L.value, font: L.font, size: L.size, outline: L.outline,
     color: L.color, outlineColor: L.outlineColor, x: L.x, y: L.y,
+    angle: L.angle, vertical: L.vertical,
   }));
 }
 
@@ -2106,7 +2107,8 @@ const SLIDERS = [
 /* Sliders that only matter for some styles are hidden for the rest, and the
    dither row is dimmed when the active style ignores it. */
 const DETAIL_LABEL = {
-  riso: 'Misregister', engrave: 'Line gap', crosshatch: 'Line gap', contour: 'Spacing',
+  halftone: 'Dot size', riso: 'Misregister',
+  engrave: 'Line gap', crosshatch: 'Line gap', contour: 'Spacing',
 };
 
 function syncStyleUI() {
@@ -2163,6 +2165,9 @@ function syncTextControls() {
   $('ot-size').textContent = L.size.toFixed(2);
   $('t-outline').value = L.outline;
   $('ot-outline').textContent = String(L.outline).replace(/\.0$/, '');
+  $('t-angle').value = L.angle || 0;
+  $('ot-angle').textContent = (L.angle || 0) + '\u00b0';
+  $('t-vertical').setAttribute('aria-pressed', String(!!L.vertical));
   document.querySelectorAll('[data-font]').forEach(b => {
     const on = b.dataset.font === L.font;
     b.classList.toggle('is-active', on);
@@ -2263,6 +2268,27 @@ function bindTextControls() {
 
   const size = $('t-size');
   size.addEventListener('input', () => setTextSize(parseFloat(size.value)));
+  const angle = $('t-angle');
+  angle.addEventListener('input', () => {
+    layer().angle = parseInt(angle.value, 10);
+    $('ot-angle').textContent = angle.value + '\u00b0';
+    markTextDirty();
+  });
+  const nudge = d => {
+    const L = layer();
+    L.angle = (((L.angle || 0) + d) % 360 + 540) % 360 - 180;
+    syncTextControls();
+    markTextDirty();
+  };
+  $('t-rot-l').addEventListener('click', () => nudge(-15));
+  $('t-rot-r').addEventListener('click', () => nudge(15));
+  $('t-vertical').addEventListener('click', () => {
+    const L = layer();
+    L.vertical = !L.vertical;
+    $('t-vertical').setAttribute('aria-pressed', String(L.vertical));
+    markTextDirty();
+  });
+
   const outline = $('t-outline');
   outline.addEventListener('input', () => {
     layer().outline = parseFloat(outline.value);
@@ -2341,7 +2367,12 @@ function resetAdjustments() {
 
 function wire() {
   bindSeg('size',    v => { state.size = v; applySize(); });
-  bindSeg('orient',  v => { state.orient = v; applySize(); });
+  bindSeg('orient',  v => {
+    if (v !== state.orient) turnComposition(v === 'portrait' ? 90 : -90);
+    state.orient = v;
+    applySize();
+    syncTextControls();          // the turn changed each caption's angle
+  });
   bindSeg('dither',  v => { state.dither = v; kick(); });
   bindSeg('style',   v => { state.style = v; syncStyleUI(); kick(); });
   bindSeg('palette', v => { state.palette = v; applyPalette(); kick(); });
@@ -2375,18 +2406,12 @@ function wire() {
     state.exportRot = v;
     openSheet();                 // refresh the note and the pending share file
   });
-  bindSeg('format', v => { state.format = v; openSheet(); });
 
   sharable = canSharePng();
   if (sharable) {
     const btn = $('btn-photos');
     btn.hidden = false;
     btn.textContent = IOS ? 'Save to Photos' : 'Share image';
-    if (IOS) {
-      const hint = document.createElement('small');
-      hint.textContent = ' the same sheet also offers Files and other apps';
-      btn.append(hint);
-    }
     btn.addEventListener('click', saveToPhotos);
   }
 

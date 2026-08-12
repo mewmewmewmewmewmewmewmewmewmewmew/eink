@@ -37,6 +37,13 @@ Which way it turns depends on how the module is mounted, so the save sheet
 offers **↻ CW** or **↺ CCW** whenever the composition is portrait, and states
 the sizes outright — *Composed 128×296, exported 296×128*.
 
+Switching between landscape and portrait turns the **whole composition** with
+the frame: the crop rotates a quarter turn and every caption carries its
+position and its own angle around with it, so a layout you built in one
+orientation arrives intact in the other rather than sideways. Note that this
+turn stacks with the export turn above — a portrait composition is rotated once
+for the frame and once again on the way into the landscape file.
+
 The camera frame is centre-cropped to the panel's aspect ratio and downscaled in
 halving steps (rather than one big jump) so fine detail survives the trip down to
 a few hundred pixels.
@@ -124,7 +131,9 @@ it swallows saturated reds and the whole print turns grey.
 what is underneath rather than always black, so a red shirt gets red hatching.
 
 Those five share one **Detail** slider, relabelled to whatever it means for the
-style: *Misregister*, *Line gap*, or *Spacing*.
+style: *Misregister*, *Line gap*, *Spacing* — or, for **Halftone**, *Dot size*,
+which scales the clustered-dot cell so the screen can read as a coarse newsprint
+rosette instead of a single-pixel one.
 
 **Sketch** and **Contour** add a **Line weight** slider (1–4 px). A one-pixel
 line is the first thing to disappear if panel software rescales or re-dithers
@@ -228,6 +237,14 @@ a deliberate look.
 Open the **Text** drawer, type a caption, and place it by dragging the preview;
 pinch (or use the Size slider) to resize.
 
+A caption can also be **rotated** — the Rotate slider runs −180° to +180°, and
+the **↺ ↻** chips beside it nudge in 15° steps for the common case of a small
+tilt. **Vertical text** sets the caption one character per line, the way
+Japanese runs down a column, which is also the only shape that fits a caption
+into a 128 px-wide portrait panel without shrinking it to nothing. Spaces are
+dropped in vertical mode, since a blank line reads as a gap rather than a word
+break.
+
 Up to **three captions** are supported. The numbered tabs at the top of the
 drawer switch between them and **＋** adds another; each carries its own text,
 font, size, inks and position, and they stack in order so caption 3 draws over
@@ -299,19 +316,13 @@ error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, an
   route from a web page into the photo album: choose *Save Image* and it lands in
   Photos rather than in Files. Shown wherever the browser can share files (as
   *Share image* on non-Apple platforms).
-- **Download** — in whichever **format** the sheet is set to:
-  - **PNG** — a 4-entry palette PNG at 2 bits per pixel. A fifth colour is not
-    representable in the file at all, and the palette states the four inks
-    outright, which is a far stronger hint to panel software than a truecolour
-    image that merely happens to be 4-colour.
-  - **BMP** — 24-bit uncompressed, bottom-up, BGR. No compression and no palette
-    indirection, so the bytes on disk are literally the colours. Some panel
-    software is happier with this than with PNG.
+- **Download PNG** — a 4-entry palette PNG at 2 bits per pixel. A fifth colour is
+  not representable in the file at all, and the palette states the four inks
+  outright, which is a far stronger hint to panel software than a truecolour
+  image that merely happens to be 4-colour.
 
-  Both are written from the same pixels and verified to decode identically.
-  The format also applies to **Save to Photos**, so the two can never disagree —
-  though Photos may refuse a BMP, in which case the share sheet's *Save to
-  Files* takes it.
+*Save to Photos* and *Download PNG* are built from the same bytes, so the two
+can never disagree — including the portrait quarter turn.
 
 ### Where projects are kept
 

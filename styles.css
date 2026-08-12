@@ -100,12 +100,6 @@ body:not([data-mode="review"]) .only-review{display:none!important}
 /* Below 1:1 the panel has to be shrunk to fit; nearest-neighbour would drop
    whole rows of dither pattern, so let the browser resample instead. */
 #preview.smooth{image-rendering:auto}
-#dims{
-  position:absolute;bottom:5px;right:6px;
-  font:11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
-  color:#fff;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:5px;
-  backdrop-filter:blur(4px);pointer-events:none;
-}
 /* Absolutely positioned so it never eats into the space layoutPreview()
    measures for the panel. */
 #hint{

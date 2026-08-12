@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#111214">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="description" content="Take photos in 4 e-ink colors: black, red, yellow and white.">
@@ -43,7 +44,6 @@
     <div id="target-seg" class="seg seg-float" role="radiogroup" aria-label="What drag and pinch control" hidden></div>
     <div id="frame">
       <canvas id="preview" width="296" height="128"></canvas>
-      <div id="dims">296 × 128</div>
     </div>
     <div id="chooser" hidden>
       <p>Start from</p>
@@ -119,7 +119,7 @@
           <input type="range" id="s-gamma" min="0.4" max="2.4" step="0.02" value="1">
           <output id="o-gamma">1.00</output></label>
 
-        <label class="slider" data-styles="riso engrave crosshatch contour"><span id="lbl-detail">Detail</span>
+        <label class="slider" data-styles="halftone riso engrave crosshatch contour"><span id="lbl-detail">Detail</span>
           <input type="range" id="s-detail" min="2" max="14" step="0.5" value="5">
           <output id="o-detail">5.0</output></label>
 
@@ -171,6 +171,12 @@
         <button class="fchip" data-font="jpKlee"   role="radio" aria-checked="false" aria-label="Japanese brush">楷書</button>
       </div>
 
+      <div class="xform-row">
+        <button class="chip wide" id="t-vertical" aria-pressed="false">Vertical text</button>
+        <button class="chip" id="t-rot-l" aria-label="Rotate text left">↺</button>
+        <button class="chip" id="t-rot-r" aria-label="Rotate text right">↻</button>
+      </div>
+
       <div class="swatch-row">
         <span class="lbl">Text</span>
         <button class="sw" data-tcolor="0" style="--c:#000000" aria-label="Black text"></button>
@@ -195,6 +201,10 @@
         <label class="slider"><span>Outline</span>
           <input type="range" id="t-outline" min="0" max="8" step="0.5" value="2">
           <output id="ot-outline">2</output></label>
+
+        <label class="slider"><span>Rotate</span>
+          <input type="range" id="t-angle" min="-180" max="180" step="5" value="0">
+          <output id="ot-angle">0°</output></label>
       </div>
 
       <div class="text-note">While this panel is open, drag the preview to move the caption and pinch to resize it.</div>
@@ -242,25 +252,9 @@
         <button class="seg-btn" data-exportrot="ccw" role="radio" aria-checked="false">↺ CCW</button>
       </div>
     </div>
-    <div class="export-row">
-      <span class="export-label">Format</span>
-      <div class="seg seg-sm" role="radiogroup" aria-label="Export format">
-        <button class="seg-btn is-active" data-format="png" role="radio" aria-checked="true">PNG</button>
-        <button class="seg-btn" data-format="bmp" role="radio" aria-checked="false">BMP</button>
-      </div>
-    </div>
-    <p id="bmp-note" class="sheet-note" hidden>Photos may refuse a BMP — if
-      <b>Save Image</b> is missing from the share sheet, use <b>Save to Files</b>
-      there, or Download.</p>
-    <button id="btn-save-project" class="btn">Save project <small>keeps layers editable</small></button>
+    <button id="btn-save-project" class="btn">Save project</button>
     <button id="btn-photos" class="btn btn-primary" hidden>Save to Photos</button>
-    <button id="btn-download" class="btn">Download .png</button>
-    <p id="ios-note" class="sheet-note" hidden>Saving to Photos is fine. Some
-      apps re-encode what they read out of the photo library, though, which is
-      what turns four colours into thousands — so if the panel result looks
-      muddy, save the image, then run it through <b>About › Check a file</b>. If
-      it still says four colours, the library is not the problem. If it does not,
-      use <b>Download</b> instead: that lands in Files untouched.</p>
+    <button id="btn-download" class="btn">Download PNG</button>
     <button id="btn-save-close" class="btn btn-quiet">Cancel</button>
   </div>
 </div>
