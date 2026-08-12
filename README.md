@@ -169,6 +169,36 @@ panel result looks muddy, save the image and run it through **About › Check a
 file** — if that still reports four colours the library is not the problem, and
 if it does not, Download to Files instead.
 
+### Matching the panel's inks
+
+**About › Ink colours** sets the four colours everything is quantised to, and
+they are not decorative — this is the lever when panel software mangles an
+upload.
+
+Error diffusion against a palette you already match is a **no-op**: every
+pixel's error against its nearest palette colour is zero, so nothing
+propagates and the image comes back exactly as it went in. Re-dithering a
+truly matching image cannot change it.
+
+Against a palette you do **not** match, every pixel carries a large error that
+the dithering faithfully scatters over its neighbours — which looks exactly
+like the speckle and colour drift people blame on the panel. Panel software
+often quantises to the display's *measured* inks: an amber-ish yellow and a
+brick red rather than RGB primaries.
+
+To find the target's real values: make an image of solid blocks of its four
+colours **in the panel's own software**, export it, and run it through *Check a
+file* below. It prints the exact hex of every colour present. Put those four
+into Ink colours and the exports become pure in the target's palette, at which
+point its dithering has nothing left to do.
+
+`tools/testcard.mjs` generates a diagnostic card at panel resolution — solid
+blocks, a one-pixel checkerboard, 1/2/3-pixel line sets, hairlines in each ink
+and corner registration pixels. Send it *through* the panel software and each
+band fails in a recognisable way: a mushy checkerboard means something
+rescaled, speckled solid blocks mean forced dithering, shifted block colours
+mean a palette or colour-profile mismatch, missing corner pixels mean cropping.
+
 ### Checking a file
 
 Judging this by eye on a phone does not work. Zooming interpolates, and iOS

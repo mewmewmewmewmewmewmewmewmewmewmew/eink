@@ -306,6 +306,19 @@
       <p><b>Diffuse / Atkinson</b> spread the quantisation error into neighbouring pixels for photographic texture. <b>Ordered</b> uses a fixed 8×8 pattern. <b>Flat</b> does no dithering. The <b>ink palette</b> row restricts which of the four colours may be used.</p>
       <p><b>Crop and rotate:</b> drag to reposition, pinch to zoom, and use ↺ ↻ to rotate. Gestures work anywhere in the preview area, including the space beside a narrow portrait panel. This works on the live view, on a photo you have just taken, and on any photo you upload.</p>
       <p><b>Text</b> is drawn after the image is reduced to four colours, so captions stay sharp instead of dissolving into the dither. Pick any ink for the letters and the outline, set the outline thickness, then use the <b>Photo / Text</b> pill over the preview to choose what dragging and pinching move, so the caption can be placed against a full-size preview. Up to three captions are supported — the numbered tabs switch between them, and each keeps its own text, font, size, inks and position. Fonts come from the device, including four Japanese faces, so the distinctive ones look their best on iOS.</p>
+      <p><b>Ink colours</b> — the four colours everything is quantised to. If the
+      panel software maps to the display's own measured inks rather than pure
+      RGB, set these to match: dithering against a palette you already match
+      cannot change your image, while dithering against one you do not match
+      scatters every pixel's error across its neighbours.</p>
+      <div class="ink-row">
+        <label>Black<input type="color" data-ink="0" value="#000000"></label>
+        <label>White<input type="color" data-ink="1" value="#ffffff"></label>
+        <label>Yellow<input type="color" data-ink="2" value="#ffff00"></label>
+        <label>Red<input type="color" data-ink="3" value="#ff0000"></label>
+      </div>
+      <button id="btn-ink-reset" class="btn btn-block">Reset inks to pure</button>
+
       <p><b>Check a file</b> — pick any image and this reports what it really contains: its type, its size, and every colour in it. A phone screenshot cannot answer that, because zooming interpolates and screenshots are re-tagged to the display's colour space, so a pure file still looks impure on screen.</p>
       <label class="btn btn-block">Choose an image to check
         <input type="file" id="chk-input" accept="image/*" hidden></label>

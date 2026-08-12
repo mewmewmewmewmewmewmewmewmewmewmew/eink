@@ -298,10 +298,14 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 .overlay{
   position:fixed;inset:0;z-index:20;background:rgba(8,9,10,.94);
   backdrop-filter:blur(10px);
-  display:flex;align-items:center;justify-content:center;
+  display:flex;align-items:flex-start;justify-content:center;
   padding:calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b));
   overflow-y:auto;
 }
+/* auto margins rather than align-items:center — centring a flex item that is
+   taller than its container pushes the overflow past the top edge, where it
+   cannot be scrolled back to, taking the close button with it. */
+.overlay > *{margin:auto 0}
 .overlay[hidden]{display:none}
 .overlay-inner{width:100%;max-width:560px;display:flex;flex-direction:column;gap:14px}
 .overlay-title{display:flex;align-items:center;justify-content:space-between;font-weight:650;font-size:16px}
@@ -343,6 +347,19 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 .prose{color:var(--muted);font-size:13.5px;line-height:1.6}
 .prose p{margin:0 0 12px}
 .prose b{color:var(--fg)}
+.ink-row{display:flex;gap:8px;margin:0 0 10px}
+.ink-row label{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;
+  font-size:11px;color:var(--muted);
+}
+.ink-row input[type=color]{
+  appearance:none;-webkit-appearance:none;
+  width:100%;height:38px;padding:0;border:1px solid var(--line);
+  border-radius:9px;background:none;cursor:pointer;
+}
+.ink-row input[type=color]::-webkit-color-swatch-wrapper{padding:3px}
+.ink-row input[type=color]::-webkit-color-swatch{border:none;border-radius:6px}
+
 #chk-out{
   font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
   background:var(--panel-2);border:1px solid var(--line);border-radius:9px;

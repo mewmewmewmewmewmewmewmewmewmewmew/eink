@@ -5,16 +5,67 @@
 /* ---------------------------------------------------------------- palette */
 /* Index order matters: it is the code written into the packed .bin export
    (0=black, 1=white, 2=yellow, 3=red — the usual Waveshare 4-colour layout). */
-const PALETTE = [
+const DEFAULT_PALETTE = [
   [0,   0,   0  ],  // 0 black
   [255, 255, 255],  // 1 white
   [255, 255, 0  ],  // 2 yellow
   [255, 0,   0  ],  // 3 red
 ];
 const PAL_NAMES = ['black','white','yellow','red'];
+
+/* Editable, because the four colours that matter are whichever ones the
+   panel's own software quantises to.
+
+   Error diffusion against a palette you already match is a no-op: every
+   pixel's error is zero, so nothing propagates and the image comes back
+   unchanged. Against a palette you do not match — panel software often uses
+   the display's measured inks, a brick red and a mustard yellow rather than
+   RGB primaries — every pixel carries a large error that the dithering
+   faithfully scatters over its neighbours. Matching the target's colours is
+   what makes a re-dither harmless. */
+const PALETTE = DEFAULT_PALETTE.map(c => c.slice());
 /* Flat copy — nearest() runs once per pixel per frame, and a typed array
    avoids re-dereferencing the nested arrays on every candidate. */
-const PAL_FLAT = new Float32Array([0,0,0, 255,255,255, 255,255,0, 255,0,0]);
+const PAL_FLAT = new Float32Array(12);
+
+const INK_KEY = 'einkcam.inks';
+
+function hex(c) {
+  return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+function applyInks(save) {
+  for (let i = 0; i < 4; i++) {
+    PAL_FLAT[i * 3]     = PALETTE[i][0];
+    PAL_FLAT[i * 3 + 1] = PALETTE[i][1];
+    PAL_FLAT[i * 3 + 2] = PALETTE[i][2];
+  }
+  document.querySelectorAll('.swatches i').forEach((el, i) => {
+    if (PALETTE[i]) el.style.background = hex(PALETTE[i]);
+  });
+  document.querySelectorAll('[data-tcolor],[data-ocolor]').forEach(b => {
+    const raw = b.dataset.tcolor !== undefined ? b.dataset.tcolor : b.dataset.ocolor;
+    b.style.setProperty('--c', hex(PALETTE[+raw]));
+  });
+  document.querySelectorAll('[data-ink]').forEach(inp => {
+    inp.value = hex(PALETTE[+inp.dataset.ink]);
+  });
+  if (save) {
+    try { localStorage.setItem(INK_KEY, JSON.stringify(PALETTE)); } catch (_) {}
+  }
+  if (typeof markAllTextDirty === 'function') markAllTextDirty();
+}
+
+function loadInks() {
+  try {
+    const v = JSON.parse(localStorage.getItem(INK_KEY));
+    if (Array.isArray(v) && v.length === 4) {
+      v.forEach((c, i) => {
+        if (Array.isArray(c) && c.length === 3) PALETTE[i] = c.map(n => Math.max(0, Math.min(255, n | 0)));
+      });
+    }
+  } catch (_) { /* keep the defaults */ }
+}
 
 /* Perceptual-ish channel weights for nearest-colour search. */
 const WR = 2, WG = 4, WB = 3;
@@ -1981,6 +2032,25 @@ function bindChecker() {
   });
 }
 
+function bindInks() {
+  document.querySelectorAll('[data-ink]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(inp.value.trim());
+      if (!m) return;
+      const n = parseInt(m[1], 16);
+      PALETTE[+inp.dataset.ink] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+      applyInks(true);
+      kick();
+    });
+  });
+  $('btn-ink-reset').addEventListener('click', () => {
+    DEFAULT_PALETTE.forEach((c, i) => { PALETTE[i] = c.slice(); });
+    applyInks(true);
+    kick();
+    toast('Inks reset');
+  });
+}
+
 let toastTimer = 0;
 function toast(msg) {
   const el = $('toast');
@@ -2330,6 +2400,7 @@ function wire() {
   bindStorage();
 
   bindChecker();
+  bindInks();
   $('btn-help').addEventListener('click', () => { $('help').hidden = false; });
   $('btn-help-close').addEventListener('click', () => { $('help').hidden = true; });
 
@@ -2350,6 +2421,8 @@ function wire() {
 }
 
 /* -------------------------------------------------------------------- go */
+loadInks();
+applyInks(false);
 applySize();
 wire();
 syncFlip();
