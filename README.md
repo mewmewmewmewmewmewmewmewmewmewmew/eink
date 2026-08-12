@@ -22,10 +22,20 @@ standalone PWA and works offline.
 
 ## Panel sizes
 
-| Size      | Landscape | Portrait  |
-|-----------|-----------|-----------|
-| 296 × 128 | 296 × 128 | 128 × 296 |
-| 400 × 300 | 400 × 300 | 300 × 400 |
+| Size      | Composed landscape | Composed portrait | Always exported |
+|-----------|--------------------|-------------------|-----------------|
+| 296 × 128 | 296 × 128          | 128 × 296         | **296 × 128**   |
+| 400 × 300 | 400 × 300          | 300 × 400         | **400 × 300**   |
+
+A panel's frame buffer is a fixed landscape raster — a 296 × 128 module is 296
+across however you hang it on the wall. Composing in portrait is a framing
+choice, not a different panel, so **exports are always written in the panel's
+native landscape orientation**, with a portrait composition turned a quarter
+turn on the way out. The preview stays portrait; only the file rotates.
+
+Which way it turns depends on how the module is mounted, so the save sheet
+offers **↻ CW** or **↺ CCW** whenever the composition is portrait, and states
+the sizes outright — *Composed 128×296, exported 296×128*.
 
 The camera frame is centre-cropped to the panel's aspect ratio and downscaled in
 halving steps (rather than one big jump) so fine detail survives the trip down to

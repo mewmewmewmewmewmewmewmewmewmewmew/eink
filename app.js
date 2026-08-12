@@ -93,6 +93,7 @@ const state = {
   smooth: 1.5,
   detail: 5,
   zoom: 1,
+  exportRot: 'cw',     // which way a portrait composition turns for export
   facing: 'environment',
   target: 'photo',     // what drag and pinch act on: 'photo' | 'text'
 };
@@ -1183,10 +1184,62 @@ function stamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-function baseName() { return `eink-${W}x${H}-${stamp()}`; }
+/* A panel's frame buffer is a fixed landscape raster — a 296x128 module is
+   296 across however you hang it. Composing in portrait is a framing choice,
+   not a different panel, so exports are always rotated back into the native
+   landscape frame. Which way round depends on how the module is mounted, so
+   that stays a choice. */
+function nativeSize() {
+  const [a, b] = SIZES[state.size];        // stored landscape-first
+  return { w: a, h: b };
+}
+
+function exportsRotated() {
+  const nat = nativeSize();
+  return !(W === nat.w && H === nat.h);
+}
+
+/* Palette indices in the panel's own orientation. */
+function exportView() {
+  if (!exportsRotated()) return { w: W, h: H, idx: indices, rotated: false };
+
+  const dw = H, dh = W;
+  const out = new Uint8Array(dw * dh);
+  const cw = state.exportRot !== 'ccw';
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const dx = cw ? H - 1 - y : y;
+      const dy = cw ? x : W - 1 - x;
+      out[dy * dw + dx] = indices[y * W + x];
+    }
+  }
+  return { w: dw, h: dh, idx: out, rotated: true };
+}
+
+function exportCanvas() {
+  const v = exportView();
+  if (!v.rotated) return preview;
+
+  const c = document.createElement('canvas');
+  c.width = v.w; c.height = v.h;
+  const ctx = c.getContext('2d');
+  const im = ctx.createImageData(v.w, v.h);
+  const d = im.data;
+  for (let p = 0; p < v.w * v.h; p++) {
+    const o = p * 4, k = v.idx[p] * 3;
+    d[o] = PAL_FLAT[k]; d[o + 1] = PAL_FLAT[k + 1]; d[o + 2] = PAL_FLAT[k + 2]; d[o + 3] = 255;
+  }
+  ctx.putImageData(im, 0, 0);
+  return c;
+}
+
+function baseName() {
+  const v = exportView();
+  return `eink-${v.w}x${v.h}-${stamp()}`;
+}
 
 function pngBlob() {
-  return new Promise(res => preview.toBlob(res, 'image/png'));
+  return new Promise(res => exportCanvas().toBlob(res, 'image/png'));
 }
 
 function download(blob, name) {
@@ -1205,13 +1258,15 @@ async function savePNG() {
   closeSheet();
 }
 
-/* 2 bits per pixel, MSB first, rows padded to a whole number of bytes. */
+/* 2 bits per pixel, MSB first, rows padded to a whole number of bytes,
+   written in the panel's native orientation. */
 function packBin() {
-  const rowBytes = Math.ceil(W / 4);
-  const out = new Uint8Array(rowBytes * H);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const code = indices[y * W + x] & 3;
+  const v = exportView();
+  const rowBytes = Math.ceil(v.w / 4);
+  const out = new Uint8Array(rowBytes * v.h);
+  for (let y = 0; y < v.h; y++) {
+    for (let x = 0; x < v.w; x++) {
+      const code = v.idx[y * v.w + x] & 3;
       out[y * rowBytes + (x >> 2)] |= code << (6 - 2 * (x & 3));
     }
   }
@@ -1262,8 +1317,17 @@ function openSheet() {
   const counts = [0, 0, 0, 0];
   for (let i = 0; i < indices.length; i++) counts[indices[i]]++;
   const total = indices.length || 1;
-  $('shot-meta').textContent = `${W}×${H} · ` +
+  const v = exportView();
+  $('shot-meta').textContent = `${v.w}×${v.h} · ` +
     PAL_NAMES.map((n, i) => `${n} ${Math.round(counts[i] / total * 100)}%`).join(' · ');
+
+  const row = $('export-rot');
+  row.hidden = !v.rotated;
+  if (v.rotated) {
+    $('export-note').textContent = `Composed ${W}×${H}, exported ${v.w}×${v.h}`;
+    setSeg('exportrot', state.exportRot);
+  }
+
   $('save-sheet').hidden = false;
   if (sharable) prepareShareFile();
 }
@@ -1975,6 +2039,10 @@ function wire() {
   $('btn-save').addEventListener('click', openSheet);
   $('btn-save-close').addEventListener('click', closeSheet);
   $('btn-png').addEventListener('click', savePNG);
+  bindSeg('exportrot', v => {
+    state.exportRot = v;
+    openSheet();                 // refresh the note and the pending share file
+  });
   $('btn-bin').addEventListener('click', saveBIN);
 
   sharable = canSharePng();
