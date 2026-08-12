@@ -267,23 +267,17 @@
     <div class="store-row">
       <span id="store-status" class="store-badge">…</span>
       <span id="store-detail"></span>
-      <button id="btn-store-setup" class="text-btn">Settings</button>
+      <button id="btn-store-setup" class="text-btn">Password</button>
     </div>
 
     <form id="store-form" hidden>
-      <label class="store-field">Endpoint URL
-        <input id="store-url" type="url" inputmode="url" autocomplete="off"
-               autocapitalize="off" spellcheck="false"
-               placeholder="https://eink-projects.you.workers.dev"></label>
       <label class="store-field">Password
         <input id="store-token" type="password" autocomplete="current-password"
-               placeholder="the server's password"></label>
-      <p class="overlay-note">Remembered on this device — you only type it once per phone or browser.</p>
+               autocapitalize="off" spellcheck="false" placeholder="server password"></label>
       <div class="store-actions">
-        <button type="button" id="btn-store-test" class="btn">Test</button>
-        <button type="submit" class="btn btn-primary">Use this server</button>
-        <button type="button" id="btn-store-off" class="btn btn-quiet">Device only</button>
+        <button type="submit" id="btn-store-connect" class="btn btn-primary">Connect</button>
       </div>
+      <p class="overlay-note">Remembered on this device — you only type it once per phone or browser.</p>
       <p id="store-msg" class="overlay-note"></p>
     </form>
 

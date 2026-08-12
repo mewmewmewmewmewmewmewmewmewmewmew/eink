@@ -330,22 +330,29 @@ can never disagree — including the portrait quarter turn.
 work you mean to keep. iOS Safari evicts all site data for anything not opened
 in seven days, which is exactly long enough to lose it.
 
-The endpoint is **built into the app** (`DEFAULT_REMOTE` in `app.js`), so every
-device points at the same server without being set up by hand. The **password**
-is not built in and never should be: this is a public repository, so a password
-committed here would be readable by anyone, and the Worker's only protection is
-that password. It is typed once per device and remembered there.
+The endpoint is **built into the app** (`REMOTE_URL` in `app.js`) and never
+shown, so setup is one field: the password. Moving the server is a one-line
+change every device picks up.
+
+The URL is not a secret and cannot be — `app.js` is downloaded by every visitor
+— it is simply not worth showing. The **password** is the actual lock, and it is
+deliberately *not* in the repository: this one is public, so anything committed
+next to the URL would protect nothing. It is typed once per device and
+remembered there.
 
 So a device that has never been used opens **Saved projects** to *Password
-needed* with the form already open and the URL already filled — enter the
-password once and that browser is set up for good. A badge shows where projects
-live: *Online*, *Password needed*, *Server unreachable*, or *This device*.
-*Password needed* is deliberately distinct from *Server unreachable*: one is
-fixed by typing, the other by waiting.
+needed*, with the form already open and one **Connect** button. Connect verifies
+before it saves — storing a password that does not work would leave the app
+quietly offline with no hint why — and says which of the two things went wrong:
+*That password was not accepted* or *Could not reach the server*.
 
-**Device only** turns the server off for that browser and sticks — the built-in
-endpoint does not creep back on the next load. Turning it back on is one tap,
-since the form still offers the built-in URL.
+A badge shows where projects live: *Online*, *Password needed*, *Server
+unreachable*, or *This device*. *Password needed* is deliberately distinct from
+*Server unreachable*: one is fixed by typing, the other by waiting.
+
+There is no manual device-only switch. If the server cannot be reached the app
+falls back on its own, so the button only ever offered a way to be offline on
+purpose.
 
 The device store stays on as a fallback, not as the default. If a save fails
 because the server is down, the project is written to IndexedDB and tagged

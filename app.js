@@ -1583,37 +1583,34 @@ function closeSheet() { $('save-sheet').hidden = true; }
 
 const REMOTE_KEY = 'einkcam.remote';
 
-/* The endpoint is baked in — it is the same server every time, and retyping a
-   URL on a phone is a poor use of anyone's afternoon. The password is not:
-   this repository is public, so a token committed here would be readable by
-   anyone and would protect nothing. It is entered once per device and
-   remembered there, which is why a new device shows Password needed rather
-   than going straight online. */
-const DEFAULT_REMOTE = { url: 'https://e-ink.mew-860.workers.dev', token: '' };
-
-function defaultRemote() {
-  return DEFAULT_REMOTE.url ? Object.assign({}, DEFAULT_REMOTE) : null;
-}
+/* There is one server, so its address is built in rather than typed into every
+   device. It is not a secret and cannot be — this file is downloaded by every
+   visitor — it is simply not worth showing. The password is the actual lock,
+   and it is deliberately NOT in here: this repository is public, so anything
+   committed alongside the URL would protect nothing. It is entered once per
+   device and remembered there. */
+const REMOTE_URL = 'https://e-ink.mew-860.workers.dev';
 
 let remote = loadRemote();
 
-/* Three states, not two: configured on this device, explicitly turned off on
-   this device, or untouched — and only the third falls back to the built-in
-   endpoint. Without the {off:true} marker, choosing "Device only" would just
-   restore the default on the next load. */
+/* The only thing stored per device is the password; the URL always comes from
+   the constant above, so moving the server is a one-line change that every
+   device picks up. Older records also carried a url — ignoring it is what
+   migrates them. */
 function loadRemote() {
+  if (!REMOTE_URL) return null;
+  let token = '';
   try {
     const r = JSON.parse(localStorage.getItem(REMOTE_KEY));
-    if (r && r.off) return null;
-    if (r && r.url) return r;
-  } catch (_) { /* unreadable — treat as untouched */ }
-  return defaultRemote();
+    if (r && r.token) token = r.token;
+  } catch (_) { /* unreadable — no password yet */ }
+  return { url: REMOTE_URL, token };
 }
 
-function storeRemote(cfg) {
-  remote = cfg;
-  try { localStorage.setItem(REMOTE_KEY, JSON.stringify(cfg || { off: true })); }
-  catch (_) { /* private mode — the choice just will not persist */ }
+function storePassword(token) {
+  remote = { url: REMOTE_URL, token };
+  try { localStorage.setItem(REMOTE_KEY, JSON.stringify({ token })); }
+  catch (_) { /* private mode — it just will not be remembered */ }
 }
 
 function apiUrl(path) {
@@ -1880,9 +1877,9 @@ async function gatherProjects() {
 
 function storeLabel(remoteFailed, needsAuth) {
   if (!remote) return ['This device', 'Browser storage can be evicted — add a server to keep projects safely.'];
-  if (needsAuth) return ['Password needed', 'Open Settings and enter the password to use projects on this device.'];
+  if (needsAuth) return ['Password needed', 'Enter the password to use projects on this device.'];
   if (remoteFailed) return ['Server unreachable', 'Showing what is on this device. Saves will sync when the server is back.'];
-  return ['Online', remote.url];
+  return ['Online', 'Projects are saved on the server, not on this device.'];
 }
 
 async function renderProjects() {
@@ -1948,19 +1945,19 @@ async function renderProjects() {
 /* When storage is off, show the built-in endpoint rather than empty fields, so
    turning it back on is one tap instead of retyping a token on a phone. */
 function fillStoreForm() {
-  const cfg = remote || defaultRemote();
-  $('store-url').value = cfg ? cfg.url : '';
-  $('store-token').value = cfg ? (cfg.token || '') : '';
+  $('store-token').value = remote ? (remote.token || '') : '';
 }
 
-async function testEndpoint(url, token) {
+/* Three outcomes, not two — a refused password and an unreachable server need
+   different things from whoever is reading the message. */
+async function tryPassword(token) {
   const saved = remote;
-  remote = { url, token };
+  remote = { url: REMOTE_URL, token };
   try {
     await api('/projects');
-    return true;
+    return 'ok';
   } catch (e) {
-    return false;
+    return /HTTP 40[13]/.test(String(e && e.message)) ? 'refused' : 'down';
   } finally {
     remote = saved;
   }
@@ -1973,30 +1970,30 @@ function bindStorage() {
     if (!f.hidden) fillStoreForm();
   });
 
-  $('btn-store-test').addEventListener('click', async () => {
-    const url = $('store-url').value.trim();
-    if (!url) return;
-    $('store-msg').textContent = 'Testing…';
-    const okay = await testEndpoint(url, $('store-token').value.trim());
-    $('store-msg').textContent = okay
-      ? 'Reached the server.'
-      : 'No answer. Check the password first — then the URL, and that the server allows this origin (CORS).';
-  });
-
+  /* Connect checks before it saves: storing a password that does not work
+     would leave the app quietly offline with no hint as to why. */
   $('store-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const url = $('store-url').value.trim();
-    if (!url) return;
-    storeRemote({ url, token: $('store-token').value.trim() });
-    $('store-form').hidden = true;
-    toast('Saving projects online');
-    renderProjects();
-  });
+    const token = $('store-token').value.trim();
+    if (!token) return;
+    const btn = $('btn-store-connect');
+    btn.disabled = true;
+    $('store-msg').textContent = 'Connecting…';
+    const result = await tryPassword(token);
+    btn.disabled = false;
 
-  $('btn-store-off').addEventListener('click', () => {
-    storeRemote(null);
+    if (result === 'refused') {
+      $('store-msg').textContent = 'That password was not accepted.';
+      return;
+    }
+    if (result === 'down') {
+      $('store-msg').textContent = 'Could not reach the server. Check your connection and try again.';
+      return;
+    }
+    storePassword(token);
     $('store-form').hidden = true;
-    toast('Saving projects on this device');
+    $('store-msg').textContent = '';
+    toast('Projects are online');
     renderProjects();
   });
 }
