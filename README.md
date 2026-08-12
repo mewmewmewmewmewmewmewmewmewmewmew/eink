@@ -87,6 +87,27 @@ page code changes it.
 | **Vector**   | Heavier flattening; big poster-like shapes with clean outlines. |
 | **Halftone** | Clustered-dot screen — reads like newsprint rather than noise. |
 | **Sketch**   | Outlines only, black on white line art. |
+| **Thermal**  | False colour: the palette read as a brightness ramp rather than as hues. |
+| **Riso**     | Spot-colour print, one pass per ink, deliberately out of register. |
+| **Engrave**  | A line screen — line thickness tracks tone, in the local ink. |
+| **Hatch**    | Crosshatching; further directions cut in as the tone deepens. |
+| **Contour**  | Iso-luminance lines, coloured by band, like a topographic map. |
+
+**Thermal** is the odd one: black → red → yellow → white happens to be a rising
+luminance sequence, so the panel can carry a false-colour image with more tonal
+steps than matching hues ever gives it. Faces and skies come out nothing like
+life, which is the point.
+
+**Riso** prints each ink as its own pass and offsets them, so colours fringe at
+the edges the way a real risograph misregisters. Black is drawn last and covers
+what is under it, so it is reserved for genuinely dark tone — at a mid threshold
+it swallows saturated reds and the whole print turns grey.
+
+**Engrave**, **Hatch** and **Contour** ink their lines in the nearest colour to
+what is underneath rather than always black, so a red shirt gets red hatching.
+
+Those five share one **Detail** slider, relabelled to whatever it means for the
+style: *Misregister*, *Line gap*, or *Spacing*.
 
 **Dither** (Photo only) selects how quantisation error is handled:
 

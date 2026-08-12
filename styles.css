@@ -55,6 +55,10 @@ body[data-mode="review"] .only-live{display:none!important}
 .seg-sm .seg-btn{font-size:11.5px;padding:6px 2px}
 .seg-row{margin-bottom:6px}
 .seg.is-muted{opacity:.38;pointer-events:none}
+/* Ten styles will not fit a phone width, so this row scrolls sideways. */
+.seg-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.seg-scroll::-webkit-scrollbar{display:none}
+.seg-scroll .seg-btn{flex:0 0 auto;padding:6px 11px}
 
 /* ---------- stage ---------- */
 /* A tall floor here would win its space from the footer rather than from the

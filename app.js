@@ -91,6 +91,7 @@ const state = {
   ditherAmt: 0.9,
   edge: 0.5,
   smooth: 1.5,
+  detail: 5,
   zoom: 1,
   facing: 'environment',
   target: 'photo',     // what drag and pinch act on: 'photo' | 'text'
@@ -98,7 +99,7 @@ const state = {
 
 const DEFAULTS = {
   dither: 'fs', exposure: 0, brightness: 0, contrast: 15,
-  saturation: 1.6, gamma: 1, ditherAmt: 0.9, edge: 0.5, smooth: 1.5, zoom: 1,
+  saturation: 1.6, gamma: 1, ditherAmt: 0.9, edge: 0.5, smooth: 1.5, detail: 5, zoom: 1,
 };
 
 /* Crop / rotate. panX and panY are -1..1 across whatever slack the crop
@@ -399,14 +400,17 @@ function clampY(y) { return y < 0 ? 0 : y >= H ? H - 1 : y; }
    meaningful no matter how much Smooth is dialled in. */
 let blurSpread = 1;
 
-function computeEdges() {
-  const gain = 0.25 * blurSpread;
-
-  /* Luma once per pixel, not once per Sobel tap — the 3x3 window would
-     otherwise recompute it nine times over. */
+/* Luma once per pixel, not once per Sobel tap — the 3x3 window would
+   otherwise recompute it nine times over. Shared with the line-based styles. */
+function computeLuma() {
   for (let p = 0, j = 0; p < W * H; p++, j += 3) {
     luma[p] = 0.299 * buf[j] + 0.587 * buf[j + 1] + 0.114 * buf[j + 2];
   }
+}
+
+function computeEdges() {
+  const gain = 0.25 * blurSpread;
+  computeLuma();
 
   for (let y = 0; y < H; y++) {
     const r0 = clampY(y - 1) * W, r1 = y * W, r2 = clampY(y + 1) * W;
@@ -445,6 +449,145 @@ function posterize(levels) {
   }
 }
 
+/* Nearest ink that can actually mark the paper — white is the paper, so a
+   line drawn in it would be invisible. */
+function nearestInk(r, g, b) {
+  let best = -1, bestD = Infinity;
+  for (let k = 0; k < inks.length; k++) {
+    const i = inks[k];
+    if (i === 1) continue;
+    const o = i * 3;
+    const dr = r - PAL_FLAT[o], dg = g - PAL_FLAT[o+1], db = b - PAL_FLAT[o+2];
+    const d = WR*dr*dr + WG*dg*dg + WB*db*db;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best < 0 ? inks[0] : best;
+}
+
+const paperInk = () => (inks.indexOf(1) >= 0 ? 1 : inks[inks.length - 1]);
+const bayerAt = (x, y) => BAYER[((y & 7) << 3) + (x & 7)];
+
+/* Thermal — the palette read as a brightness ramp instead of as colours.
+   Black through red and yellow to white happens to be a rising luminance
+   sequence, so a 4-colour panel can carry a false-colour image with far more
+   tonal steps than matching hues ever gives it. */
+const RAMP = [0, 3, 2, 1];
+
+function thermalRender() {
+  const out = imgData.data;
+  const n = RAMP.length - 1;
+  const amt = state.ditherAmt;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x, j = p * 3;
+      let l = 0.299 * buf[j] + 0.587 * buf[j + 1] + 0.114 * buf[j + 2];
+      l = l < 0 ? 0 : l > 255 ? 255 : l;
+      const t = (l / 255) * n;
+      let i = Math.floor(t);
+      if (i >= n) i = n - 1;
+      const frac = t - i;
+      emit(out, p, RAMP[frac > 0.5 + bayerAt(x, y) * amt ? i + 1 : i]);
+    }
+  }
+}
+
+/* Riso — spot-colour printing, one pass per ink, deliberately out of
+   register. Each layer is sampled at its own offset, and later inks cover
+   earlier ones because the panel cannot overprint. */
+function risoRender() {
+  const out = imgData.data;
+  const off = Math.round(state.detail / 2);
+  const amt = 90 * state.ditherAmt;
+  const paper = paperInk();
+  const hasY = inks.indexOf(2) >= 0, hasR = inks.indexOf(3) >= 0;
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x;
+      let ink = paper;
+
+      if (hasY) {
+        const j = (clampY(y + off) * W + clampX(x - off)) * 3;
+        const yellowness = Math.min(buf[j], buf[j + 1]) - buf[j + 2];
+        if (yellowness + bayerAt(x, y) * amt > 30) ink = 2;
+      }
+      if (hasR) {
+        const j = (y * W + clampX(x + off)) * 3;
+        const redness = buf[j] - Math.max(buf[j + 1], buf[j + 2]);
+        if (redness + bayerAt(x, y) * amt > 40) ink = 3;
+      }
+      const j = p * 3;
+      const l = 0.299 * buf[j] + 0.587 * buf[j + 1] + 0.114 * buf[j + 2];
+      /* Black is the last pass and covers everything under it, so it has to
+         be reserved for genuinely dark ink — at a mid threshold it swallows
+         saturated reds and the print turns grey. */
+      if (l + bayerAt(x, y) * amt < 70) ink = 0;
+
+      emit(out, p, ink);
+    }
+  }
+}
+
+/* Engrave and Crosshatch — a line screen rather than a dot screen. Line
+   thickness tracks darkness, and crosshatch brings in further directions as
+   the tone deepens, the way an etching builds up shadow. */
+const HATCH = [[0.7071, 0.7071], [0.7071, -0.7071], [1, 0], [0, 1]];
+
+function lineRender(cross) {
+  const out = imgData.data;
+  boxBlur(Math.round(state.smooth), 1);
+  computeLuma();
+
+  const period = Math.max(2.5, state.detail);
+  const dirs = cross ? 4 : 1;
+  const paper = paperInk();
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x;
+      const dark = 1 - Math.min(1, Math.max(0, luma[p] / 255));
+      let on = false;
+
+      for (let d = 0; d < dirs && !on; d++) {
+        const gate = cross ? d / dirs : 0;          // each layer waits its turn
+        if (dark <= gate) continue;
+        const local = (dark - gate) / (1 - gate);
+        const u = (x * HATCH[d][0] + y * HATCH[d][1]) / period;
+        const f = u - Math.floor(u);
+        const width = Math.min(0.92, local * (cross ? 1.5 : 1.15));
+        if (Math.abs(f - 0.5) * 2 < width) on = true;
+      }
+
+      if (!on) { emit(out, p, paper); continue; }
+      const j = p * 3;
+      emit(out, p, nearestInk(buf[j], buf[j + 1], buf[j + 2]));
+    }
+  }
+}
+
+/* Contour — iso-luminance lines, like a topographic map. A line is drawn
+   wherever a pixel and its neighbour fall in different brightness bands, and
+   the bands cycle through the inks so the height reads as colour. */
+function contourRender() {
+  const out = imgData.data;
+  boxBlur(Math.max(1, Math.round(state.smooth)), 2);
+  computeLuma();
+
+  const step = Math.max(4, state.detail * 6);
+  const paper = paperInk();
+  const line = inks.filter(i => i !== 1);
+  const band = p => Math.floor(luma[p] / step);
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x;
+      const b0 = band(p);
+      const edge = b0 !== band(y * W + clampX(x + 1)) || b0 !== band(clampY(y + 1) * W + x);
+      emit(out, p, edge ? line[((b0 % line.length) + line.length) % line.length] : paper);
+    }
+  }
+}
+
 function renderStyle() {
   const out = imgData.data;
 
@@ -467,6 +610,26 @@ function renderStyle() {
 
     case 'halftone':
       quantize('cluster', state.ditherAmt);
+      break;
+
+    case 'thermal':
+      thermalRender();
+      break;
+
+    case 'riso':
+      risoRender();
+      break;
+
+    case 'engrave':
+      lineRender(false);
+      break;
+
+    case 'crosshatch':
+      lineRender(true);
+      break;
+
+    case 'contour':
+      contourRender();
       break;
 
     case 'sketch': {
@@ -1540,16 +1703,23 @@ const SLIDERS = [
   ['s-dither',     'ditherAmt',  v => v.toFixed(2)],
   ['s-edge',       'edge',       v => v.toFixed(2)],
   ['s-smooth',     'smooth',     v => v.toFixed(1)],
+  ['s-detail',     'detail',     v => v.toFixed(1)],
   ['s-zoom',       'zoom',       v => v.toFixed(1) + '×'],
 ];
 
 /* Sliders that only matter for some styles are hidden for the rest, and the
    dither row is dimmed when the active style ignores it. */
+const DETAIL_LABEL = {
+  riso: 'Misregister', engrave: 'Line gap', crosshatch: 'Line gap', contour: 'Spacing',
+};
+
 function syncStyleUI() {
   document.querySelectorAll('.slider[data-styles]').forEach(el => {
     el.hidden = !el.dataset.styles.split(' ').includes(state.style);
   });
-  $('dither-seg').classList.toggle('is-muted', state.style !== 'photo');
+  $('dither-seg').classList.toggle('is-muted',
+    state.style !== 'photo' && state.style !== 'thermal' && state.style !== 'riso');
+  $('lbl-detail').textContent = DETAIL_LABEL[state.style] || 'Detail';
 }
 
 function syncFlip() {
