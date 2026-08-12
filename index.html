@@ -229,6 +229,28 @@
 <div id="projects" class="overlay" hidden>
   <div class="overlay-inner">
     <div class="overlay-title">Saved projects <button id="btn-projects-close" class="text-btn">Close</button></div>
+
+    <div class="store-row">
+      <span id="store-status" class="store-badge">…</span>
+      <span id="store-detail"></span>
+      <button id="btn-store-setup" class="text-btn">Settings</button>
+    </div>
+
+    <form id="store-form" hidden>
+      <label class="store-field">Endpoint URL
+        <input id="store-url" type="url" inputmode="url" autocomplete="off"
+               autocapitalize="off" spellcheck="false"
+               placeholder="https://eink-projects.you.workers.dev"></label>
+      <label class="store-field">Access token
+        <input id="store-token" type="password" autocomplete="off" placeholder="optional"></label>
+      <div class="store-actions">
+        <button type="button" id="btn-store-test" class="btn">Test</button>
+        <button type="submit" class="btn btn-primary">Use this server</button>
+        <button type="button" id="btn-store-off" class="btn btn-quiet">Device only</button>
+      </div>
+      <p id="store-msg" class="overlay-note"></p>
+    </form>
+
     <p class="overlay-note">Tap a project to carry on editing it — background, crop and captions all come back.</p>
     <div id="projects-grid"></div>
   </div>
@@ -244,7 +266,7 @@
       <p><b>Diffuse / Atkinson</b> spread the quantisation error into neighbouring pixels for photographic texture. <b>Ordered</b> uses a fixed 8×8 pattern. <b>Flat</b> does no dithering. The <b>ink palette</b> row restricts which of the four colours may be used.</p>
       <p><b>Crop and rotate:</b> drag to reposition, pinch to zoom, and use ↺ ↻ to rotate. Gestures work anywhere in the preview area, including the space beside a narrow portrait panel. This works on the live view, on a photo you have just taken, and on any photo you upload.</p>
       <p><b>Text</b> is drawn after the image is reduced to four colours, so captions stay sharp instead of dissolving into the dither. Pick any ink for the letters and the outline, set the outline thickness, then use the <b>Photo / Text</b> pill over the preview to choose what dragging and pinching move, so the caption can be placed against a full-size preview. Up to three captions are supported — the numbered tabs switch between them, and each keeps its own text, font, size, inks and position. Fonts come from the device, including four Japanese faces, so the distinctive ones look their best on iOS.</p>
-      <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Save project</b> keeps the shot editable — the background, the crop and every caption come back when you reopen it from the folder button. <b>Download PNG</b> writes the image at exact panel resolution. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
+      <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Save project</b> keeps the shot editable — the background, the crop and every caption come back when you reopen it from the folder button. Point it at a server under Saved projects → Settings and projects live there rather than in browser storage, which phones are free to evict; the device is used only as a fallback when the server cannot be reached. <b>Download PNG</b> writes the image at exact panel resolution. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
     </div>
   </div>
 </div>

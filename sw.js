@@ -1,5 +1,5 @@
-/* Tiny offline cache. Bump CACHE to invalidate. */
-const CACHE = 'einkcam-v1';
+/* Offline cache for the app shell only. Bump CACHE to invalidate. */
+const CACHE = 'einkcam-v2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -14,16 +14,25 @@ self.addEventListener('activate', e => {
   );
 });
 
-/* Network first so updates land immediately; cache is the offline fallback. */
+/* Only the app's own files are cached. Project storage lives on a remote
+   endpoint, and caching those responses would hand back a stale project list
+   — or a deleted project — long after the server had moved on. Anything
+   cross-origin is passed straight through to the network, untouched. */
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
+  const req = e.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;      // API and everything else
+  if (url.pathname.includes('/projects')) return;       // same-origin API, if any
+
   e.respondWith(
-    fetch(e.request)
+    fetch(req)
       .then(res => {
         const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
+      .catch(() => caches.match(req).then(r => r || caches.match('./index.html')))
   );
 });

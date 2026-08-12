@@ -1,0 +1,21 @@
+name = "eink-projects"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# The bucket holds both halves of a project: meta/<id>.json and blob/<id>.
+# Create it first:  npx wrangler r2 bucket create eink-projects
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "eink-projects"
+
+[vars]
+# Lock this to the origin serving the app once you know it, e.g.
+# "https://you.github.io" — "*" is fine while you are trying it out.
+ALLOW_ORIGIN = "*"
+# How many projects to keep; older ones are pruned on save.
+KEEP = "12"
+
+# Set the shared token as a secret, never in this file:
+#   npx wrangler secret put TOKEN
+# Leave it unset to run the instance open (anyone with the URL can read
+# and write).

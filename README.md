@@ -158,15 +158,63 @@ error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, an
 - **Download PNG** — exact panel resolution, 4 colours, no resampling.
 - **Download .bin** — packed 2 bits per pixel for direct upload to a panel.
 
-Projects live in IndexedDB (the last 12), because a background at camera
-resolution is far past what `localStorage` will hold. The background is stored
-losslessly as PNG when that comes in under 1.5 MB — graphics and screenshots
-usually do, and reopen bit-identically — and as high-quality JPEG when it does
-not, which is the normal case for camera photos. Error diffusion is chaotic
-enough that a single-level change in the source can flip a dot and cascade, so
-a JPEG-backed project comes back with under 1% of its dither pixels rearranged:
-invisible, but not bit-identical. Panel size, crop, captions and every setting
-restore exactly either way.
+### Where projects are kept
+
+**On a server, when one is configured** — browser storage is not a safe home for
+work you mean to keep. iOS Safari evicts all site data for anything not opened
+in seven days, which is exactly long enough to lose it.
+
+Open **Saved projects → Settings**, give it an endpoint URL and an optional
+token, and projects are read and written there. A badge shows where they live:
+*Online*, *Server unreachable*, or *This device*.
+
+The device store stays on as a fallback, not as the default. If a save fails
+because the server is down, the project is written to IndexedDB and tagged
+*not synced* rather than lost, and pushed up the next time the list is opened.
+When a server is configured and reachable, nothing is written to the device at
+all. The service worker caches only the app's own files — API responses are
+passed straight through, so the project list can never come back stale.
+
+### Storage format
+
+The background is stored losslessly as PNG when that comes in under 1.5 MB —
+graphics and screenshots usually do, and reopen bit-identically — and as
+quality-0.95 JPEG when it does not, which is the normal case for camera photos.
+Error diffusion is chaotic enough that a single-level change in the source can
+flip a dot and cascade, so a JPEG-backed project comes back with under 1% of its
+dither pixels rearranged: invisible, but not bit-identical. Panel size, crop,
+captions and every setting restore exactly either way.
+
+### Running the server
+
+`worker/` holds a Cloudflare Worker backed by R2 that implements the endpoint.
+It is about 150 lines and costs nothing at this scale:
+
+```sh
+cd worker
+npx wrangler r2 bucket create eink-projects
+npx wrangler secret put TOKEN      # optional; leave unset to run it open
+npx wrangler deploy
+```
+
+Put the resulting `https://….workers.dev` URL and the token into the app's
+storage settings. Set `ALLOW_ORIGIN` in `wrangler.toml` to the origin serving
+the app once you know it, so the endpoint is not open to every website.
+
+The contract is small enough to reimplement on anything — a Pi, a VPS, any
+host that can serve four routes with CORS:
+
+| Route | Method | Body / response |
+|-------|--------|-----------------|
+| `/projects` | GET | `{ "projects": [meta, …] }`, newest first |
+| `/projects/:id` | PUT | multipart: `meta` (JSON string) + `blob` (file) |
+| `/projects/:id/blob` | GET | the background image |
+| `/projects/:id` | DELETE | — |
+
+`meta` carries the panel size, crop, adjustments, captions and a thumbnail;
+the background travels separately as `blob` so listing stays cheap. Send
+`Authorization: Bearer <token>` when a token is set, and answer `OPTIONS`
+preflights with CORS headers.
 
 Safari only permits `navigator.share()` directly from a user gesture, so the PNG
 is encoded when the save sheet opens and the button shares the ready-made file —
@@ -192,11 +240,13 @@ index *is* the code written to the file.
 ## Files
 
 ```
-index.html    markup and controls
-styles.css    dark, touch-first UI
-app.js        capture, tone mapping, dithering, styles, export
-sw.js         offline cache
-manifest.json PWA metadata
+index.html          markup and controls
+styles.css          dark, touch-first UI
+app.js              capture, tone mapping, dithering, styles, text, storage
+sw.js               offline cache for the app shell only
+manifest.json       PWA metadata
+worker/worker.js    Cloudflare Worker for project storage (R2)
+worker/wrangler.toml deployment config
 ```
 
 Everything runs on the main thread against typed arrays; a 296 × 128 frame

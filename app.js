@@ -1052,8 +1052,54 @@ function closeSheet() { $('save-sheet').hidden = true; }
 /* --------------------------------------------------------------- projects */
 /* A project is the editable state of a shot: the full-resolution background
    plus the crop, the adjustments and every caption — not the flattened
-   4-colour export. Backgrounds run to hundreds of KB, well past what
-   localStorage will hold, so they live in IndexedDB as Blobs. */
+   4-colour export.
+
+   Projects belong on a server. Browser storage on iOS is evictable: Safari
+   clears site data for anything not opened in seven days, which is exactly
+   long enough to lose work you meant to keep. So a remote endpoint is used
+   whenever one is configured, and the on-device store is kept only as an
+   offline fallback that syncs up when the endpoint is reachable again. */
+
+const REMOTE_KEY = 'einkcam.remote';
+let remote = loadRemote();
+
+function loadRemote() {
+  try {
+    const r = JSON.parse(localStorage.getItem(REMOTE_KEY));
+    return r && r.url ? r : null;
+  } catch (_) { return null; }
+}
+
+function storeRemote(cfg) {
+  remote = cfg;
+  try {
+    if (cfg) localStorage.setItem(REMOTE_KEY, JSON.stringify(cfg));
+    else localStorage.removeItem(REMOTE_KEY);
+  } catch (_) { /* private mode — config just will not persist */ }
+}
+
+function apiUrl(path) {
+  return remote.url.replace(/\/+$/, '') + path;
+}
+
+function apiHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  if (remote && remote.token) h.Authorization = 'Bearer ' + remote.token;
+  return h;
+}
+
+/* cache: 'no-store' belt-and-braces alongside the service worker rule — the
+   project list must never come from a cache. */
+async function api(path, opts) {
+  const res = await fetch(apiUrl(path), Object.assign({
+    cache: 'no-store',
+    headers: apiHeaders(opts && opts.headers),
+  }, opts || {}, { headers: apiHeaders(opts && opts.headers) }));
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res;
+}
+
+/* ------------------------------------------------- on-device fallback store */
 const DB_NAME = 'einkcam', DB_VER = 1, STORE = 'projects';
 const PROJ_MAX = 12;
 
@@ -1082,18 +1128,18 @@ async function idbRun(mode, fn) {
   });
 }
 
-const listProjects  = () => idbRun('readonly',  s => s.getAll());
-const putProject    = r  => idbRun('readwrite', s => s.put(r));
-const deleteProject = id => idbRun('readwrite', s => s.delete(id));
+const localList   = () => idbRun('readonly',  s => s.getAll());
+const localPut    = r  => idbRun('readwrite', s => s.put(r));
+const localDelete = id => idbRun('readwrite', s => s.delete(id));
 
+/* ------------------------------------------------------------- serialising */
 /* Lossless when it is affordable, JPEG when it is not.
 
    Error diffusion is chaotic — shifting one source pixel by a single level can
    flip a dot and cascade — so a lossy background comes back with a slightly
    different dither pattern (under 1% of pixels, invisible, but not identical).
    Graphics and screenshots compress small as PNG and round-trip exactly;
-   camera photos run to several megabytes, where JPEG is the sane trade for
-   holding a dozen projects. */
+   camera photos run to several megabytes, where JPEG is the sane trade. */
 const LOSSLESS_LIMIT = 1.5e6;
 
 function encode(canvas, type, q) {
@@ -1121,13 +1167,28 @@ function serialiseTexts() {
   }));
 }
 
+function meta(rec) {
+  return {
+    id: rec.id, w: rec.w, h: rec.h, thumb: rec.thumb,
+    state: rec.state, view: rec.view, texts: rec.texts, active: rec.active,
+  };
+}
+
+/* ------------------------------------------------------------------ saving */
+async function pushRemote(rec) {
+  const fd = new FormData();
+  fd.append('meta', JSON.stringify(meta(rec)));
+  fd.append('blob', rec.blob, 'background');
+  await api('/projects/' + rec.id, { method: 'PUT', body: fd });
+}
+
 async function saveProject() {
   if (mode !== 'review' || !lastSource) return;
   const blob = await sourceBlob();
   if (!blob) { toast('Could not save this image'); return; }
 
   const rec = {
-    id: Date.now(),
+    id: String(Date.now()),
     w: W, h: H,
     thumb: preview.toDataURL('image/png'),
     state: Object.assign({}, state),
@@ -1137,18 +1198,45 @@ async function saveProject() {
     blob,
   };
 
+  if (remote) {
+    try {
+      await pushRemote(rec);
+      toast('Saved online');
+      closeSheet();
+      return;
+    } catch (_) {
+      /* Keep the work rather than lose it, and mark it to go up later. */
+      rec.pending = true;
+    }
+  }
+
   try {
-    await putProject(rec);
-    const all = await listProjects();
-    all.sort((a, b) => b.id - a.id);
-    for (const old of all.slice(PROJ_MAX)) await deleteProject(old.id);
-    toast('Project saved');
+    await localPut(rec);
+    const all = await localList();
+    all.sort((a, b) => Number(b.id) - Number(a.id));
+    for (const old of all.slice(PROJ_MAX)) await localDelete(old.id);
+    toast(remote ? 'Server unreachable — saved on device' : 'Saved on this device');
   } catch (_) {
     toast('Could not save — storage unavailable');
   }
   closeSheet();
 }
 
+/* Anything saved while the endpoint was down goes up on the next listing. */
+async function flushPending() {
+  if (!remote) return;
+  let pend = [];
+  try { pend = (await localList()).filter(r => r.pending); } catch (_) { return; }
+  for (const rec of pend) {
+    try {
+      await pushRemote(rec);
+      await localDelete(rec.id);
+    } catch (_) { return; }        // still down; try again next time
+  }
+  if (pend.length) toast(`Synced ${pend.length} project${pend.length === 1 ? '' : 's'}`);
+}
+
+/* ---------------------------------------------------------------- restoring */
 /* Push a restored project back through every control, so the drawers agree
    with what is on screen. */
 function applyProjectState(rec) {
@@ -1188,7 +1276,17 @@ function setSeg(attr, value) {
 let srcUrl = null;
 
 async function openProject(rec) {
-  const url = URL.createObjectURL(rec.blob);
+  let blob = rec.blob;
+  if (!blob) {
+    try {
+      blob = await (await api('/projects/' + rec.id + '/blob')).blob();
+    } catch (_) {
+      toast('Could not fetch that project');
+      return;
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
   const img = new Image();
   img.src = url;
   try {
@@ -1208,18 +1306,51 @@ async function openProject(rec) {
   setMode('review');
 }
 
+async function removeProject(rec) {
+  if (rec.local) { await localDelete(rec.id); return; }
+  try { await api('/projects/' + rec.id, { method: 'DELETE' }); }
+  catch (_) { toast('Could not delete — server unreachable'); }
+}
+
+/* ------------------------------------------------------------------ listing */
+async function gatherProjects() {
+  const out = [];
+  let remoteFailed = false;
+
+  if (remote) {
+    try {
+      const data = await (await api('/projects')).json();
+      (data.projects || []).forEach(p => out.push(p));
+    } catch (_) { remoteFailed = true; }
+  }
+
+  /* On-device records are only the ones not yet on the server (or all of them
+     when no server is configured). */
+  try {
+    (await localList()).forEach(r => out.push(Object.assign({}, r, { local: true })));
+  } catch (_) { /* no IndexedDB */ }
+
+  out.sort((a, b) => Number(b.id) - Number(a.id));
+  return { list: out, remoteFailed };
+}
+
+function storeLabel(remoteFailed) {
+  if (!remote) return ['This device', 'Browser storage can be evicted — add a server to keep projects safely.'];
+  if (remoteFailed) return ['Server unreachable', 'Showing what is on this device. Saves will sync when the server is back.'];
+  return ['Online', remote.url];
+}
+
 async function renderProjects() {
   const grid = $('projects-grid');
   grid.innerHTML = '';
-  let list = [];
-  try { list = await listProjects(); }
-  catch (_) {
-    const p = document.createElement('p');
-    p.textContent = 'Saved projects are unavailable in this browser.';
-    grid.appendChild(p);
-    return;
-  }
-  list.sort((a, b) => b.id - a.id);
+  await flushPending();
+
+  const { list, remoteFailed } = await gatherProjects();
+  const [label, detail] = storeLabel(remoteFailed);
+  const badge = $('store-status');
+  badge.textContent = label;
+  badge.className = 'store-badge ' + (!remote ? 'is-local' : remoteFailed ? 'is-down' : 'is-online');
+  $('store-detail').textContent = detail;
 
   if (!list.length) {
     const p = document.createElement('p');
@@ -1233,12 +1364,20 @@ async function renderProjects() {
     const img = document.createElement('img');
     img.src = rec.thumb;
     img.alt = '';
+
     const meta = document.createElement('figcaption');
     const caps = (rec.texts || []).filter(t => t.value && t.value.trim()).length;
-    const d = new Date(rec.id);
+    const d = new Date(Number(rec.id));
     const p2 = n => String(n).padStart(2, '0');
     meta.textContent = `${rec.w}×${rec.h} · ${caps} caption${caps === 1 ? '' : 's'}` +
       ` · ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+
+    if (rec.local) {
+      const tag = document.createElement('span');
+      tag.className = 'proj-tag';
+      tag.textContent = rec.pending ? 'not synced' : 'on device';
+      fig.append(tag);
+    }
 
     const open = document.createElement('button');
     open.className = 'proj-open';
@@ -1249,10 +1388,64 @@ async function renderProjects() {
     del.className = 'del';
     del.textContent = '×';
     del.setAttribute('aria-label', 'Delete project');
-    del.addEventListener('click', async () => { await deleteProject(rec.id); renderProjects(); });
+    del.addEventListener('click', async () => { await removeProject(rec); renderProjects(); });
 
     fig.append(img, meta, open, del);
     grid.appendChild(fig);
+  });
+}
+
+/* ------------------------------------------------------------ storage setup */
+function fillStoreForm() {
+  $('store-url').value = remote ? remote.url : '';
+  $('store-token').value = remote ? (remote.token || '') : '';
+}
+
+async function testEndpoint(url, token) {
+  const saved = remote;
+  remote = { url, token };
+  try {
+    await api('/projects');
+    return true;
+  } catch (e) {
+    return false;
+  } finally {
+    remote = saved;
+  }
+}
+
+function bindStorage() {
+  $('btn-store-setup').addEventListener('click', () => {
+    const f = $('store-form');
+    f.hidden = !f.hidden;
+    if (!f.hidden) fillStoreForm();
+  });
+
+  $('btn-store-test').addEventListener('click', async () => {
+    const url = $('store-url').value.trim();
+    if (!url) return;
+    $('store-msg').textContent = 'Testing…';
+    const okay = await testEndpoint(url, $('store-token').value.trim());
+    $('store-msg').textContent = okay
+      ? 'Reached the server.'
+      : 'No answer. Check the URL, the token, and that the server allows this origin (CORS).';
+  });
+
+  $('store-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const url = $('store-url').value.trim();
+    if (!url) return;
+    storeRemote({ url, token: $('store-token').value.trim() });
+    $('store-form').hidden = true;
+    toast('Saving projects online');
+    renderProjects();
+  });
+
+  $('btn-store-off').addEventListener('click', () => {
+    storeRemote(null);
+    $('store-form').hidden = true;
+    toast('Saving projects on this device');
+    renderProjects();
   });
 }
 
@@ -1262,7 +1455,7 @@ function toast(msg) {
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
 }
 
 /* -------------------------------------------------------------------- UI */
@@ -1583,6 +1776,7 @@ function wire() {
   $('btn-projects').addEventListener('click', () => { renderProjects(); $('projects').hidden = false; });
   $('btn-projects-close').addEventListener('click', () => { $('projects').hidden = true; });
   $('btn-save-project').addEventListener('click', saveProject);
+  bindStorage();
 
   $('btn-help').addEventListener('click', () => { $('help').hidden = false; });
   $('btn-help-close').addEventListener('click', () => { $('help').hidden = true; });
