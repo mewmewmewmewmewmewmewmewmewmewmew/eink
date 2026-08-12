@@ -50,6 +50,9 @@ function applyInks(save) {
   document.querySelectorAll('[data-ink]').forEach(inp => {
     inp.value = hex(PALETTE[+inp.dataset.ink]);
   });
+  document.querySelectorAll('[data-inkhex]').forEach(inp => {
+    if (document.activeElement !== inp) inp.value = hex(PALETTE[+inp.dataset.inkhex]);
+  });
   if (save) {
     try { localStorage.setItem(INK_KEY, JSON.stringify(PALETTE)); } catch (_) {}
   }
@@ -2043,6 +2046,17 @@ function bindInks() {
       kick();
     });
   });
+  document.querySelectorAll('[data-inkhex]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(inp.value.trim());
+      if (!m) return;                       // ignore half-typed values
+      const n = parseInt(m[1], 16);
+      PALETTE[+inp.dataset.inkhex] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+      applyInks(true);
+      kick();
+    });
+  });
+
   $('btn-ink-reset').addEventListener('click', () => {
     DEFAULT_PALETTE.forEach((c, i) => { PALETTE[i] = c.slice(); });
     applyInks(true);

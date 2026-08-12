@@ -347,18 +347,26 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 .prose{color:var(--muted);font-size:13.5px;line-height:1.6}
 .prose p{margin:0 0 12px}
 .prose b{color:var(--fg)}
-.ink-row{display:flex;gap:8px;margin:0 0 10px}
-.ink-row label{
-  flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;
-  font-size:11px;color:var(--muted);
+.ink-list{display:flex;flex-direction:column;gap:7px;margin:0 0 10px}
+.ink{display:flex;align-items:center;gap:10px}
+.ink span{flex:1;font-size:13px;color:var(--fg)}
+.ink input[type=color]{
+  appearance:none;-webkit-appearance:none;flex:0 0 auto;
+  width:46px;height:34px;padding:0;border:1px solid var(--line);
+  border-radius:8px;background:none;cursor:pointer;
 }
-.ink-row input[type=color]{
-  appearance:none;-webkit-appearance:none;
-  width:100%;height:38px;padding:0;border:1px solid var(--line);
-  border-radius:9px;background:none;cursor:pointer;
+.ink input[type=color]::-webkit-color-swatch-wrapper{padding:3px}
+.ink input[type=color]::-webkit-color-swatch{border:none;border-radius:5px}
+/* A hex field as well as the swatch: iOS buries its hex entry behind the
+   colour picker's sliders tab, and these values get copied from a report. */
+.ink input[type=text]{
+  flex:0 0 auto;width:104px;
+  font:13px ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--fg);
+  padding:8px 9px;border-radius:8px;text-transform:lowercase;
+  -webkit-user-select:text;user-select:text;
 }
-.ink-row input[type=color]::-webkit-color-swatch-wrapper{padding:3px}
-.ink-row input[type=color]::-webkit-color-swatch{border:none;border-radius:6px}
+.ink input[type=text]:focus{outline:none;border-color:var(--accent)}
 
 #chk-out{
   font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
