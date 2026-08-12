@@ -1,0 +1,14 @@
+{
+  "name": "E-Ink Cam",
+  "short_name": "E-Ink Cam",
+  "description": "Take photos in the four e-ink panel colours: black, red, yellow and white.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#111214",
+  "theme_color": "#111214",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
