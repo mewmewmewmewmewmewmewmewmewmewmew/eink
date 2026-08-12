@@ -39,10 +39,8 @@
   </div>
 
   <main id="stage">
-    <div id="target-seg" class="seg seg-float" role="radiogroup" aria-label="What drag and pinch control" hidden>
-      <button class="seg-btn is-active" data-target="photo" role="radio" aria-checked="true">Photo</button>
-      <button class="seg-btn" data-target="text" role="radio" aria-checked="false">Text</button>
-    </div>
+    <!-- Populated by renderTargetPill(): Photo, then one entry per caption. -->
+    <div id="target-seg" class="seg seg-float" role="radiogroup" aria-label="What drag and pinch control" hidden></div>
     <div id="frame">
       <canvas id="preview" width="296" height="128"></canvas>
       <div id="dims">296 × 128</div>
