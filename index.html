@@ -140,8 +140,16 @@
           <output id="o-smooth">1.5</output></label>
 
         <label class="slider"><span>Zoom</span>
-          <input type="range" id="s-zoom" min="1" max="6" step="0.05" value="1">
+          <input type="range" id="s-zoom" min="0.2" max="6" step="0.05" value="1">
           <output id="o-zoom">1.0×</output></label>
+
+        <div class="swatch-row">
+          <span class="lbl">Background</span>
+          <button class="sw" data-bg="0" style="--c:#000000" aria-label="Black background"></button>
+          <button class="sw is-active" data-bg="1" style="--c:#ffffff" aria-label="White background"></button>
+          <button class="sw" data-bg="2" style="--c:#ffff00" aria-label="Yellow background"></button>
+          <button class="sw" data-bg="3" style="--c:#ff0000" aria-label="Red background"></button>
+        </div>
       </div>
 
       <button id="btn-reset" class="text-btn block">Reset adjustments</button>

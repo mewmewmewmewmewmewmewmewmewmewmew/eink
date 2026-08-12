@@ -304,8 +304,36 @@ with a separate scroller for the sliders, so a flick always moves the same thing
 Exposure, brightness, contrast, saturation and gamma are applied *before*
 quantisation, which is the only place they can meaningfully change the result —
 with four colours available, tone mapping is most of the work. `Dither` sets
-error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, and
-`Zoom` is a digital crop.
+error-diffusion strength, and `Outline` and `Smooth` drive the edge-based styles.
+
+## Zoom, background and transparency
+
+`Zoom` runs **0.2× to 6×**. Above 1 the photo is larger than the panel and the
+slider chooses how far into it to crop. Below 1 the photo is *smaller* than the
+panel: it stops being cropped once the whole of it fits, and sits on the
+background colour with a margin. Both regimes come from one number — panel
+pixels per source pixel — so nothing jumps as the slider crosses 1.
+
+Dragging does the sensible thing on either side. Above 1 it pans the crop; below
+1 there is no crop left to pan, so it slides the photo around inside the margin.
+Exactly one of the two is available on a given axis, so the same gesture covers
+both without a mode switch.
+
+**Background** picks which of the four inks fills everything the photo does not
+cover. It is restricted by the ink palette in the same way captions are, so a
+two-tone panel cannot be given a red background.
+
+**Transparent PNGs work.** Alpha is composited onto the background colour, so a
+cut-out subject lands on flat ink rather than on black. Soft, antialiased edges
+are blended and left to the dither, because a feathered edge is genuinely part of
+the picture; fully transparent pixels are pinned to the exact ink *after*
+quantisation. That last part matters: a flat area that tone mapping has nudged
+half a level off the palette dithers into speckle, which is the one artefact this
+app exists to avoid.
+
+Transparency also survives a project save. Projects normally fall back to JPEG
+for large backgrounds, and JPEG has no alpha channel — so an image that has any
+is kept as PNG however big it turns out.
 
 ## Saving
 

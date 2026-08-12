@@ -148,6 +148,7 @@ const state = {
   detail: 5,
   weight: 1,
   zoom: 1,
+  bg: 1,               // palette index behind the photo: white
   exportRot: 'cw',     // which way a portrait composition turns for export
   facing: 'environment',
   target: 'photo',     // what drag and pinch act on: 'photo' | 'text'
@@ -156,6 +157,7 @@ const state = {
 const DEFAULTS = {
   dither: 'fs', exposure: 0, brightness: 0, contrast: 15,
   saturation: 1.6, gamma: 1, ditherAmt: 0.9, edge: 0.5, smooth: 1.5, detail: 5, weight: 1, zoom: 1,
+  bg: 1,
 };
 
 /* Crop / rotate. panX and panY are -1..1 across whatever slack the crop
@@ -203,6 +205,8 @@ let edgeMap = null;    // Float32Array W*H, Sobel magnitude
 let indices = null;    // Uint8Array W*H, palette index per pixel
 let mask = null;       // Uint8Array W*H, line-art coverage
 let maskInk = null;    // Uint8Array W*H, ink chosen for each covered pixel
+let bgMask = null;     // Uint8Array W*H, 1 where nothing but background sits
+let hasBg = false;     // whether this frame has any background at all
 let imgData = null;
 
 function allocate() {
@@ -217,6 +221,7 @@ function allocate() {
   indices = new Uint8Array(W * H);
   mask = new Uint8Array(W * H);
   maskInk = new Uint8Array(W * H);
+  bgMask = new Uint8Array(W * H);
   imgData = pctx.createImageData(W, H);
   markAllTextDirty();        // glyph size is relative to panel height
   layoutPreview();
@@ -248,15 +253,33 @@ function cropGeom(sw, sh) {
   const tw = swap ? H : W, th = swap ? W : H;
   const ta = tw / th;
 
-  let cw = sw, ch = sw / ta;
-  if (ch > sh) { ch = sh; cw = sh * ta; }
-  cw /= state.zoom; ch /= state.zoom;
+  /* The crop that exactly fills the panel at zoom 1. */
+  let cw0 = sw, ch0 = sw / ta;
+  if (ch0 > sh) { ch0 = sh; cw0 = sh * ta; }
+
+  /* Everything derives from one number: how many panel pixels a source pixel
+     is worth. Below zoom 1 the whole photo eventually fits and stops being
+     cropped, leaving margin — above it, the photo is bigger than the panel and
+     is cropped, exactly as before. Writing it this way keeps the two regimes
+     continuous, so nothing jumps as the slider crosses 1. */
+  const scale = state.zoom * tw / cw0;
+  const dw = Math.min(tw, sw * scale);
+  const dh = Math.min(th, sh * scale);
+  const cw = dw / scale, ch = dh / scale;
 
   const slackX = (sw - cw) / 2, slackY = (sh - ch) / 2;
+
+  /* Above zoom 1 the photo overflows the panel and panning chooses which part
+     shows; below it the photo has room to move instead, so the same gesture
+     slides it around the margin. Exactly one of the two is ever non-zero on a
+     given axis, so both can be driven by the same panX/panY. */
+  const marginX = (tw - dw) / 2, marginY = (th - dh) / 2;
   return {
-    tw, th, cw, ch, slackX, slackY,
+    tw, th, cw, ch, dw, dh, slackX, slackY, marginX, marginY,
     sx: slackX + view.panX * slackX,
     sy: slackY + view.panY * slackY,
+    dx: view.panX * marginX,
+    dy: view.panY * marginY,
   };
 }
 
@@ -265,9 +288,9 @@ function grabFrame(src, sw, sh) {
   const g = cropGeom(sw, sh);
 
   let el = src, sx = g.sx, sy = g.sy, sW = g.cw, sH = g.ch, slot = 0;
-  while (sW > g.tw * 2 && sH > g.th * 2) {
-    const nw = Math.max(g.tw, Math.round(sW / 2));
-    const nh = Math.max(g.th, Math.round(sH / 2));
+  while (sW > g.dw * 2 && sH > g.dh * 2) {
+    const nw = Math.max(Math.ceil(g.dw), Math.round(sW / 2));
+    const nh = Math.max(Math.ceil(g.dh), Math.round(sH / 2));
     const cvs = scratch[slot], ctx = sctxs[slot];
     if (cvs.width !== nw || cvs.height !== nh) {
       cvs.width = nw; cvs.height = nh;
@@ -280,14 +303,58 @@ function grabFrame(src, sw, sh) {
 
   /* Mirror is applied outside the rotation so it always reads as a left-right
      flip of the finished frame, whichever way the image has been turned. */
+  wctx.clearRect(0, 0, W, H);
   wctx.save();
   wctx.translate(W / 2, H / 2);
   if (view.mirror) wctx.scale(-1, 1);
   if (view.rot) wctx.rotate(view.rot * Math.PI / 180);
-  wctx.drawImage(el, sx, sy, sW, sH, -g.tw / 2, -g.th / 2, g.tw, g.th);
+  wctx.drawImage(el, sx, sy, sW, sH, -g.dw / 2 + g.dx, -g.dh / 2 + g.dy, g.dw, g.dh);
   wctx.restore();
 
-  return wctx.getImageData(0, 0, W, H);
+  const frame = wctx.getImageData(0, 0, W, H);
+  paintBackground(frame);
+  return frame;
+}
+
+/* Anywhere the photo does not reach — margin left by scaling it down, or a
+   hole in a transparent PNG — is filled with the chosen ink.
+
+   The fill happens here, before tone mapping and dithering, so that pixels at
+   the edge of the photo diffuse their error into something sensible rather
+   than into black. The flat areas are then pinned to the exact ink again after
+   quantisation (restoreBackground), because otherwise a background that the
+   contrast slider has nudged half a level off the palette dithers into
+   speckle — the one artefact this app exists to avoid. */
+function paintBackground(frame) {
+  const d = frame.data, bg = PALETTE[state.bg], n = W * H;
+  hasBg = false;
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const a = d[i + 3];
+    if (a === 255) { bgMask[p] = 0; continue; }
+    hasBg = true;
+    if (a === 0) {
+      d[i] = bg[0]; d[i + 1] = bg[1]; d[i + 2] = bg[2];
+      bgMask[p] = 1;
+    } else {
+      /* A soft edge is genuinely part of the picture, so it is blended and
+         left to the dither rather than pinned flat. */
+      const t = a / 255, u = 1 - t;
+      d[i] = d[i] * t + bg[0] * u;
+      d[i + 1] = d[i + 1] * t + bg[1] * u;
+      d[i + 2] = d[i + 2] * t + bg[2] * u;
+      bgMask[p] = 0;
+    }
+    d[i + 3] = 255;
+  }
+}
+
+function restoreBackground(out) {
+  if (!hasBg) return;
+  const bg = PALETTE[state.bg], n = W * H;
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    if (!bgMask[p]) continue;
+    out[i] = bg[0]; out[i + 1] = bg[1]; out[i + 2] = bg[2]; out[i + 3] = 255;
+  }
 }
 
 /* ------------------------------------------------------------ adjustment */
@@ -988,6 +1055,7 @@ function renderOnce() {
   if (!src) return false;
   adjust(src);
   renderStyle();
+  restoreBackground(imgData.data);
   drawText(imgData.data);
   pctx.putImageData(imgData, 0, 0);
   return true;
@@ -1043,8 +1111,13 @@ function pinchDist() {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+/* Below 1 the photo is smaller than the panel and sits on the background
+   colour; 0.2 is far enough to make a stamp of it without the slider spending
+   most of its travel somewhere useless. */
+const ZOOM_MIN = 0.2;
+
 function setZoom(z) {
-  state.zoom = Math.min(6, Math.max(1, z));
+  state.zoom = Math.min(6, Math.max(ZOOM_MIN, z));
   const el = $('s-zoom');
   el.value = state.zoom;
   $('o-zoom').textContent = state.zoom.toFixed(1) + '×';
@@ -1068,8 +1141,10 @@ function panBy(dx, dy) {
   }
 
   const perPx = g.cw / g.tw;     // source pixels per output pixel
-  if (g.slackX > 0) view.panX = clamp1(view.panX - du * perPx / g.slackX);
-  if (g.slackY > 0) view.panY = clamp1(view.panY - dv * perPx / g.slackY);
+  if (g.slackX > 0)      view.panX = clamp1(view.panX - du * perPx / g.slackX);
+  else if (g.marginX > 0) view.panX = clamp1(view.panX + du / g.marginX);
+  if (g.slackY > 0)      view.panY = clamp1(view.panY - dv * perPx / g.slackY);
+  else if (g.marginY > 0) view.panY = clamp1(view.panY + dv / g.marginY);
 }
 function clamp1(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -1681,6 +1756,15 @@ function encode(canvas, type, q) {
   return new Promise(res => canvas.toBlob(res, type, q));
 }
 
+function hasAlpha(canvas) {
+  try {
+    const x = canvas.getContext('2d', { willReadFrequently: true });
+    const d = x.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] !== 255) return true;
+  } catch (_) { /* tainted or oversized — assume not */ }
+  return false;
+}
+
 async function sourceBlob() {
   const { el, w, h } = lastSource;
   let canvas = el;
@@ -1691,6 +1775,10 @@ async function sourceBlob() {
   }
   const png = await encode(canvas, 'image/png');
   if (png && png.size <= LOSSLESS_LIMIT) return png;
+  /* JPEG has no alpha channel, so falling back to it would bring a transparent
+     PNG back with black wherever the background belongs. Size is the lesser
+     problem. */
+  if (png && hasAlpha(canvas)) return png;
   return encode(canvas, 'image/jpeg', 0.95);
 }
 
@@ -1792,6 +1880,7 @@ function applyProjectState(rec) {
   });
 
   applyPalette();
+  syncBgSwatches();
   buildLUT();
   syncStyleUI();
   syncFlip();
@@ -2158,6 +2247,11 @@ function applyPalette() {
   syncInkSwatches();
 }
 
+function syncBgSwatches() {
+  document.querySelectorAll('[data-bg]').forEach(b =>
+    b.classList.toggle('is-active', +b.dataset.bg === state.bg));
+}
+
 function setSwatch(kind, i) {
   if (kind === 'tcolor') layer().color = i; else layer().outlineColor = i;
   document.querySelectorAll(`[data-${kind}]`).forEach(b =>
@@ -2168,10 +2262,14 @@ function setSwatch(kind, i) {
 /* An ink the panel palette has ruled out must not sneak back in through the
    caption, so those swatches are disabled and any live selection moves off. */
 function syncInkSwatches() {
-  document.querySelectorAll('[data-tcolor],[data-ocolor]').forEach(b => {
-    const raw = b.dataset.tcolor !== undefined ? b.dataset.tcolor : b.dataset.ocolor;
+  document.querySelectorAll('[data-tcolor],[data-ocolor],[data-bg]').forEach(b => {
+    const raw = b.dataset.tcolor !== undefined ? b.dataset.tcolor
+              : b.dataset.ocolor !== undefined ? b.dataset.ocolor : b.dataset.bg;
     b.disabled = inks.indexOf(+raw) < 0;
   });
+  /* A background the panel cannot print would be quantised to something else
+     anyway, so it moves to paper rather than staying wrong. */
+  if (inks.indexOf(state.bg) < 0) { state.bg = paperInk(); syncBgSwatches(); }
   /* Every layer has to be brought inside the new ink set, not just the one
      on screen in the drawer. */
   const fallback = inks.indexOf(1) >= 0 ? 1 : inks[0];
@@ -2288,6 +2386,13 @@ function bindTextControls() {
     });
   });
 
+  document.querySelectorAll('[data-bg]').forEach(b =>
+    b.addEventListener('click', () => {
+      state.bg = +b.dataset.bg;
+      syncBgSwatches();
+      kick();
+    }));
+
   document.querySelectorAll('[data-tcolor]').forEach(b =>
     b.addEventListener('click', () => setSwatch('tcolor', +b.dataset.tcolor)));
   document.querySelectorAll('[data-ocolor]').forEach(b =>
@@ -2388,6 +2493,7 @@ function resetAdjustments() {
     b.classList.toggle('is-active', on);
     b.setAttribute('aria-checked', String(on));
   });
+  syncBgSwatches();
   buildLUT();
   kick();
 }
