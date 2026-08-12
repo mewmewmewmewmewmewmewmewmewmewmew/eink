@@ -74,6 +74,29 @@ Crop and zoom work on the live viewfinder too, for framing before the shot.
 (black/white/yellow), `Mono` (black/white). Useful for two-colour panels, or for
 a deliberate look.
 
+## Text
+
+Open the **Text** drawer, type a caption, and place it by dragging the preview;
+pinch (or use the Size slider) to resize. While that drawer is open the preview's
+drag and pinch belong to the caption — close it and they go back to the crop.
+
+The caption is drawn **after** the image has been reduced to four colours, using
+palette inks directly. Putting it through the dither instead would smear the
+letterforms and destroy legibility at 296 × 128. Glyphs are rasterised at 3× and
+thresholded at half coverage, which gives well-shaped letters with hard,
+on-palette edges — no grey antialiasing a 4-colour panel could not show anyway.
+
+Letters and outline each take any of the four inks; restricting the ink palette
+disables the swatches it rules out, so a caption cannot smuggle a colour into a
+two-tone panel. Outline thickness runs 0–8 px and is drawn outside the glyph.
+
+Seven faces are offered — *Sans, Serif, Slab, Mono* for straight work and
+*Poster, Round, Marker* for fun. These are **system fonts**, not webfonts, which
+keeps the app self-contained and offline-capable; the trade-off is that
+availability varies by platform. The stacks are written iOS-first (Impact,
+Arial Rounded MT Bold, Bradley Hand), and fall back to generic bold sans, serif
+or cursive elsewhere, so the playful faces look their best on an iPhone.
+
 ## Adjustments
 
 Exposure, brightness, contrast, saturation and gamma are applied *before*

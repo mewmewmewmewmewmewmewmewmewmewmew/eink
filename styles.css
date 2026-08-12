@@ -109,8 +109,52 @@ body[data-mode="review"] .only-live{display:none!important}
 .text-btn:active{color:var(--fg)}
 .chev{display:inline-block;transition:transform .15s}
 #btn-adjust[aria-expanded="true"] .chev{transform:rotate(180deg)}
-#advanced{padding-top:8px}
-#advanced[hidden]{display:none}
+#advanced,#textpanel{padding-top:8px}
+#advanced[hidden],#textpanel[hidden]{display:none}
+
+.panel-tabs{display:flex;gap:6px;margin-top:6px}
+.panel-tabs .chip[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
+.panel-tabs .chip[aria-expanded="true"] .chev{transform:rotate(180deg)}
+
+/* ---------- text overlay ---------- */
+.text-input-row{display:flex;gap:6px;margin-bottom:7px}
+#t-input{
+  flex:1;min-width:0;appearance:none;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--fg);
+  font:inherit;font-size:15px;padding:9px 11px;border-radius:9px;
+  -webkit-user-select:text;user-select:text;
+}
+#t-input::placeholder{color:var(--muted)}
+#t-input:focus{outline:none;border-color:var(--accent)}
+
+.font-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+.font-row::-webkit-scrollbar{display:none}
+.fchip{
+  flex:0 0 auto;appearance:none;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--muted);
+  font-size:15px;line-height:1;padding:8px 13px;border-radius:9px;cursor:pointer;
+}
+.fchip.is-active{border-color:var(--accent);color:var(--fg)}
+/* Each chip previews its own face, so the choice is visible before applying. */
+.fchip[data-font="sans"]  {font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;font-weight:700}
+.fchip[data-font="serif"] {font-family:Georgia,"Times New Roman",serif;font-weight:700}
+.fchip[data-font="slab"]  {font-family:"American Typewriter","Rockwell","Courier New",serif;font-weight:700}
+.fchip[data-font="mono"]  {font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-weight:700}
+.fchip[data-font="poster"]{font-family:Impact,Haettenschweiler,"Arial Narrow","Arial Black",sans-serif;letter-spacing:.5px}
+.fchip[data-font="round"] {font-family:"Arial Rounded MT Bold","SF Pro Rounded","Trebuchet MS",sans-serif;font-weight:700}
+.fchip[data-font="marker"]{font-family:"Bradley Hand",Chalkduster,"Segoe Script","Comic Sans MS",cursive}
+
+.swatch-row{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.swatch-row .lbl{font-size:12.5px;color:var(--muted);width:52px;flex:0 0 auto}
+.sw{
+  width:30px;height:30px;border-radius:8px;cursor:pointer;padding:0;
+  background:var(--c);border:2px solid transparent;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);
+}
+.sw.is-active{border-color:var(--accent)}
+.sw:disabled{opacity:.2;cursor:default}
+
+.text-note{font-size:11.5px;color:var(--muted);text-align:center;padding:6px 0 2px}
 
 .xform-row{display:flex;gap:6px;margin-bottom:6px}
 .chip{

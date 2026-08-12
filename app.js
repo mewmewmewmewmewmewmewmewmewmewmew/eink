@@ -158,6 +158,7 @@ function allocate() {
   indices = new Uint8Array(W * H);
   imgData = pctx.createImageData(W, H);
   dimsEl.textContent = `${W} × ${H}`;
+  textDirty = true;          // glyph size is relative to panel height
   layoutPreview();
 }
 
@@ -481,6 +482,135 @@ function renderStyle() {
   }
 }
 
+/* ------------------------------------------------------------ text overlay */
+/* System font stacks — no webfonts, so the app stays self-contained and works
+   offline. The first name in each stack is the one iOS actually ships; the
+   rest are fallbacks for Android and desktop. */
+const FONTS = {
+  sans:   '700 {S}px -apple-system, "Helvetica Neue", Arial, sans-serif',
+  serif:  '700 {S}px Georgia, "Times New Roman", serif',
+  slab:   '700 {S}px "American Typewriter", Rockwell, "Courier New", serif',
+  mono:   '700 {S}px ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+  poster: '400 {S}px Impact, Haettenschweiler, "Arial Narrow", "Arial Black", sans-serif',
+  round:  '700 {S}px "Arial Rounded MT Bold", "SF Pro Rounded", "Trebuchet MS", sans-serif',
+  marker: '400 {S}px "Bradley Hand", Chalkduster, "Segoe Script", "Comic Sans MS", cursive',
+};
+
+const text = {
+  value: '',
+  font: 'sans',
+  size: 0.26,          // fraction of panel height
+  outline: 2,          // panel pixels, outside the glyph
+  color: 1,            // palette index
+  outlineColor: 0,
+  x: 0.5, y: 0.8,      // normalised centre
+};
+
+const tcv  = document.createElement('canvas');
+const tctx = tcv.getContext('2d', { willReadFrequently: true });
+const SS = 3;          // supersample factor for glyph rasterising
+
+/* The glyphs are rasterised once into a small bitmap of palette indices and
+   then stamped at an offset, so dragging the text never re-rasterises. */
+let textBmp = null;    // {w, h, mask, idx} in panel pixels
+let textDirty = true;
+
+function markTextDirty() { textDirty = true; kick(); }
+
+function buildTextBitmap() {
+  textDirty = false;
+  textBmp = null;
+  const s = text.value;
+  if (!s.trim() || !W) return;
+
+  const px = Math.max(4, text.size * H);
+  const lw = text.outline;
+  const fontCss = FONTS[text.font].replace('{S}', (px * SS).toFixed(2));
+
+  tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.font = fontCss;
+  const measured = tctx.measureText(s).width / SS;
+
+  const bw = Math.ceil(measured + lw * 2 + 6);
+  const bh = Math.ceil(px * 1.5 + lw * 2 + 6);
+  if (bw < 1 || bh < 1 || bw * bh > 4e6) return;
+
+  const cw = bw * SS, ch = bh * SS;
+  if (tcv.width !== cw || tcv.height !== ch) { tcv.width = cw; tcv.height = ch; }
+
+  const mask = new Uint8Array(bw * bh);
+  const idx  = new Uint8Array(bw * bh);
+  const need = Math.ceil(SS * SS / 2);
+
+  /* Canvas antialiases text, but a 4-colour panel has no intermediate shades
+     to put it in. Rasterising at 3x and keeping pixels with at least half
+     coverage gives well-shaped letterforms with hard, on-palette edges. */
+  const stamp = (draw, ink) => {
+    tctx.setTransform(1, 0, 0, 1, 0, 0);
+    tctx.clearRect(0, 0, cw, ch);
+    tctx.font = fontCss;
+    tctx.textAlign = 'center';
+    tctx.textBaseline = 'middle';
+    tctx.lineJoin = 'round';
+    tctx.miterLimit = 2;
+    draw(cw / 2, ch / 2);
+
+    const d = tctx.getImageData(0, 0, cw, ch).data;
+    for (let y = 0; y < bh; y++) {
+      for (let x = 0; x < bw; x++) {
+        let cov = 0;
+        for (let sy = 0; sy < SS; sy++) {
+          let o = ((y * SS + sy) * cw + x * SS) * 4 + 3;
+          for (let sx = 0; sx < SS; sx++, o += 4) if (d[o] >= 128) cov++;
+        }
+        if (cov >= need) { const p = y * bw + x; mask[p] = 1; idx[p] = ink; }
+      }
+    }
+  };
+
+  /* Stroke first, fill over it: lineWidth is doubled so half the stroke sits
+     outside the glyph and the fill covers the half that sits inside. */
+  if (lw > 0) {
+    stamp((x, y) => {
+      tctx.lineWidth = lw * 2 * SS;
+      tctx.strokeStyle = '#fff';
+      tctx.strokeText(s, x, y);
+    }, text.outlineColor);
+  }
+  stamp((x, y) => { tctx.fillStyle = '#fff'; tctx.fillText(s, x, y); }, text.color);
+
+  textBmp = { w: bw, h: bh, mask, idx };
+}
+
+function drawText(out) {
+  if (textDirty) buildTextBitmap();
+  if (!textBmp) return;
+  const bw = textBmp.w, bh = textBmp.h, mask = textBmp.mask, idx = textBmp.idx;
+  const ox = Math.round(text.x * W - bw / 2);
+  const oy = Math.round(text.y * H - bh / 2);
+
+  for (let y = 0; y < bh; y++) {
+    const ty = oy + y;
+    if (ty < 0 || ty >= H) continue;
+    const row = y * bw, trow = ty * W;
+    for (let x = 0; x < bw; x++) {
+      if (!mask[row + x]) continue;
+      const tx = ox + x;
+      if (tx < 0 || tx >= W) continue;
+      emit(out, trow + tx, idx[row + x]);
+    }
+  }
+}
+
+/* Drags move the caption while the Text drawer is open, and re-frame the crop
+   the rest of the time. Hit-testing the glyphs instead sounds more direct, but
+   a caption sized past about half the panel covers the whole preview and there
+   is nowhere left to grab for panning — this stays predictable at every size,
+   and still falls through to the crop when there is no caption yet. */
+function textGesture() {
+  return !$('textpanel').hidden && !!text.value.trim();
+}
+
 /* --------------------------------------------------------------- pipeline */
 let lastSource = null;   // {el, w, h} — video, captured still, or upload
 
@@ -490,6 +620,7 @@ function renderOnce() {
   if (!src) return false;
   adjust(src);
   renderStyle();
+  drawText(imgData.data);
   pctx.putImageData(imgData, 0, 0);
   return true;
 }
@@ -573,12 +704,25 @@ function panBy(dx, dy) {
   if (g.slackY > 0) view.panY = clamp1(view.panY - dv * perPx / g.slackY);
 }
 function clamp1(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
+function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+function setTextSize(v) {
+  text.size = Math.min(0.9, Math.max(0.06, v));
+  $('t-size').value = text.size;
+  $('ot-size').textContent = text.size.toFixed(2);
+  markTextDirty();
+}
+
+let dragText = false;
 
 function bindGestures() {
   preview.addEventListener('pointerdown', e => {
     preview.setPointerCapture(e.pointerId);
+    if (ptrs.size === 0) dragText = textGesture();
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 2) pinch = { dist: pinchDist(), zoom: state.zoom };
+    if (ptrs.size === 2) {
+      pinch = { dist: pinchDist(), zoom: state.zoom, size: text.size, onText: dragText };
+    }
   });
 
   preview.addEventListener('pointermove', e => {
@@ -588,7 +732,16 @@ function bindGestures() {
     p.x = e.clientX; p.y = e.clientY;
 
     if (ptrs.size >= 2) {
-      if (pinch && pinch.dist > 0) setZoom(pinch.zoom * pinchDist() / pinch.dist);
+      if (pinch && pinch.dist > 0) {
+        const ratio = pinchDist() / pinch.dist;
+        if (pinch.onText) setTextSize(pinch.size * ratio);
+        else setZoom(pinch.zoom * ratio);
+      }
+    } else if (dragText) {
+      /* Position is applied when the bitmap is stamped, so moving the caption
+         costs nothing beyond a redraw. */
+      text.x = clamp01(text.x + dx / dispScale / W);
+      text.y = clamp01(text.y + dy / dispScale / H);
     } else {
       panBy(dx, dy);
     }
@@ -598,6 +751,7 @@ function bindGestures() {
   const end = e => {
     ptrs.delete(e.pointerId);
     if (ptrs.size < 2) pinch = null;
+    if (ptrs.size === 0) dragText = false;
   };
   preview.addEventListener('pointerup', end);
   preview.addEventListener('pointercancel', end);
@@ -915,6 +1069,78 @@ function applyPalette() {
   const m = PALETTE_MODES[state.palette] || PALETTE_MODES.full;
   inks = m.inks;
   warmth = m.warm;
+  syncInkSwatches();
+}
+
+function setSwatch(kind, i) {
+  if (kind === 'tcolor') text.color = i; else text.outlineColor = i;
+  document.querySelectorAll(`[data-${kind}]`).forEach(b =>
+    b.classList.toggle('is-active', +b.dataset[kind] === i));
+  markTextDirty();
+}
+
+/* An ink the panel palette has ruled out must not sneak back in through the
+   caption, so those swatches are disabled and any live selection moves off. */
+function syncInkSwatches() {
+  document.querySelectorAll('[data-tcolor],[data-ocolor]').forEach(b => {
+    const raw = b.dataset.tcolor !== undefined ? b.dataset.tcolor : b.dataset.ocolor;
+    b.disabled = inks.indexOf(+raw) < 0;
+  });
+  const fallback = inks.indexOf(1) >= 0 ? 1 : inks[0];
+  if (inks.indexOf(text.color) < 0) setSwatch('tcolor', fallback);
+  if (inks.indexOf(text.outlineColor) < 0) setSwatch('ocolor', inks[0]);
+}
+
+function bindTextControls() {
+  const input = $('t-input');
+  input.addEventListener('input', () => { text.value = input.value; markTextDirty(); });
+  $('t-clear').addEventListener('click', () => {
+    input.value = ''; text.value = ''; markTextDirty(); input.focus();
+  });
+
+  document.querySelectorAll('[data-font]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('[data-font]').forEach(o => {
+        o.classList.remove('is-active');
+        o.setAttribute('aria-checked', 'false');
+      });
+      b.classList.add('is-active');
+      b.setAttribute('aria-checked', 'true');
+      text.font = b.dataset.font;
+      markTextDirty();
+    });
+  });
+
+  document.querySelectorAll('[data-tcolor]').forEach(b =>
+    b.addEventListener('click', () => setSwatch('tcolor', +b.dataset.tcolor)));
+  document.querySelectorAll('[data-ocolor]').forEach(b =>
+    b.addEventListener('click', () => setSwatch('ocolor', +b.dataset.ocolor)));
+
+  const size = $('t-size');
+  size.addEventListener('input', () => setTextSize(parseFloat(size.value)));
+  const outline = $('t-outline');
+  outline.addEventListener('input', () => {
+    text.outline = parseFloat(outline.value);
+    $('ot-outline').textContent = text.outline.toFixed(1).replace(/\.0$/, '');
+    markTextDirty();
+  });
+}
+
+/* Only one drawer open at a time — both are tall, and the preview needs the
+   room more than they do. */
+function togglePanel(which) {
+  const adv = $('advanced'), txt = $('textpanel');
+  const openAdv = which === 'adjust' ? adv.hidden : false;
+  const openTxt = which === 'text'   ? txt.hidden : false;
+  adv.hidden = !openAdv;
+  txt.hidden = !openTxt;
+  $('btn-adjust').setAttribute('aria-expanded', String(openAdv));
+  $('btn-text').setAttribute('aria-expanded', String(openTxt));
+  layoutPreview();
+  $('hint').textContent = openTxt
+    ? 'Drag to move the caption · pinch to resize it'
+    : 'Drag to reposition · pinch to zoom';
+  showHint();
 }
 
 function bindSliders() {
@@ -958,12 +1184,10 @@ function wire() {
   syncStyleUI();
   bindGestures();
 
-  $('btn-adjust').addEventListener('click', () => {
-    const adv = $('advanced'), open = adv.hidden;
-    adv.hidden = !open;
-    $('btn-adjust').setAttribute('aria-expanded', String(open));
-    layoutPreview();
-  });
+  bindTextControls();
+  syncInkSwatches();
+  $('btn-adjust').addEventListener('click', () => togglePanel('adjust'));
+  $('btn-text').addEventListener('click', () => togglePanel('text'));
 
   $('btn-reset').addEventListener('click', resetAdjustments);
   $('btn-rot-l').addEventListener('click', () => rotate(-90));

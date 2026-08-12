@@ -56,7 +56,11 @@
         <button class="seg-btn" data-style="halftone" role="radio" aria-checked="false">Halftone</button>
         <button class="seg-btn" data-style="sketch" role="radio" aria-checked="false">Sketch</button>
       </div>
-      <button id="btn-adjust" class="text-btn" aria-expanded="false">Adjust<span class="chev">▾</span></button>
+    </div>
+
+    <div class="panel-tabs">
+      <button id="btn-adjust" class="chip wide" aria-expanded="false">Adjust <span class="chev">▾</span></button>
+      <button id="btn-text" class="chip wide" aria-expanded="false">Text <span class="chev">▾</span></button>
     </div>
 
     <div id="advanced" hidden>
@@ -122,6 +126,52 @@
 
       <button id="btn-reset" class="text-btn block">Reset adjustments</button>
     </div>
+
+    <div id="textpanel" hidden>
+      <div class="text-input-row">
+        <input id="t-input" type="text" maxlength="60" placeholder="Add a caption…"
+               autocomplete="off" autocorrect="off" spellcheck="false">
+        <button id="t-clear" class="chip" aria-label="Clear text">×</button>
+      </div>
+
+      <div class="font-row" role="radiogroup" aria-label="Font">
+        <button class="fchip is-active" data-font="sans"   role="radio" aria-checked="true">Sans</button>
+        <button class="fchip" data-font="serif"  role="radio" aria-checked="false">Serif</button>
+        <button class="fchip" data-font="slab"   role="radio" aria-checked="false">Slab</button>
+        <button class="fchip" data-font="mono"   role="radio" aria-checked="false">Mono</button>
+        <button class="fchip" data-font="poster" role="radio" aria-checked="false">Poster</button>
+        <button class="fchip" data-font="round"  role="radio" aria-checked="false">Round</button>
+        <button class="fchip" data-font="marker" role="radio" aria-checked="false">Marker</button>
+      </div>
+
+      <div class="swatch-row">
+        <span class="lbl">Text</span>
+        <button class="sw" data-tcolor="0" style="--c:#000000" aria-label="Black text"></button>
+        <button class="sw is-active" data-tcolor="1" style="--c:#ffffff" aria-label="White text"></button>
+        <button class="sw" data-tcolor="2" style="--c:#ffff00" aria-label="Yellow text"></button>
+        <button class="sw" data-tcolor="3" style="--c:#ff0000" aria-label="Red text"></button>
+      </div>
+
+      <div class="swatch-row">
+        <span class="lbl">Outline</span>
+        <button class="sw is-active" data-ocolor="0" style="--c:#000000" aria-label="Black outline"></button>
+        <button class="sw" data-ocolor="1" style="--c:#ffffff" aria-label="White outline"></button>
+        <button class="sw" data-ocolor="2" style="--c:#ffff00" aria-label="Yellow outline"></button>
+        <button class="sw" data-ocolor="3" style="--c:#ff0000" aria-label="Red outline"></button>
+      </div>
+
+      <div class="sliders">
+        <label class="slider"><span>Size</span>
+          <input type="range" id="t-size" min="0.06" max="0.9" step="0.01" value="0.26">
+          <output id="ot-size">0.26</output></label>
+
+        <label class="slider"><span>Outline</span>
+          <input type="range" id="t-outline" min="0" max="8" step="0.5" value="2">
+          <output id="ot-outline">2</output></label>
+      </div>
+
+      <div class="text-note">While this panel is open, drag the preview to move the caption and pinch to resize it.</div>
+    </div>
   </section>
 
   <footer id="bottombar">
@@ -184,6 +234,7 @@
       <p><b>Photo</b> keeps full tonal detail through dithering. <b>Cel</b> flattens the image into anime-style colour areas with inked outlines. <b>Vector</b> pushes that further — big poster-flat shapes. <b>Halftone</b> uses clustered print dots. <b>Sketch</b> keeps only the outlines on white.</p>
       <p><b>Diffuse / Atkinson</b> spread the quantisation error into neighbouring pixels for photographic texture. <b>Ordered</b> uses a fixed 8×8 pattern. <b>Flat</b> does no dithering. The <b>ink palette</b> row restricts which of the four colours may be used.</p>
       <p><b>Crop and rotate:</b> drag the preview to reposition, pinch to zoom, and use ↺ ↻ to rotate. This works on the live view, on a photo you have just taken, and on any photo you upload.</p>
+      <p><b>Text</b> is drawn after the image is reduced to four colours, so captions stay sharp instead of dissolving into the dither. Pick any ink for the letters and the outline, set the outline thickness, then drag the preview to place it and pinch to resize while the Text panel is open. Fonts come from the device, so the playful ones look their best on iOS.</p>
       <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Download PNG</b> writes the image at exact panel resolution. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
     </div>
   </div>
