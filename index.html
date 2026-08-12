@@ -275,8 +275,10 @@
         <input id="store-url" type="url" inputmode="url" autocomplete="off"
                autocapitalize="off" spellcheck="false"
                placeholder="https://eink-projects.you.workers.dev"></label>
-      <label class="store-field">Access token
-        <input id="store-token" type="password" autocomplete="off" placeholder="optional"></label>
+      <label class="store-field">Password
+        <input id="store-token" type="password" autocomplete="current-password"
+               placeholder="the server's password"></label>
+      <p class="overlay-note">Remembered on this device — you only type it once per phone or browser.</p>
       <div class="store-actions">
         <button type="button" id="btn-store-test" class="btn">Test</button>
         <button type="submit" class="btn btn-primary">Use this server</button>

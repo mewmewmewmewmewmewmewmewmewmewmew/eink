@@ -330,9 +330,22 @@ can never disagree — including the portrait quarter turn.
 work you mean to keep. iOS Safari evicts all site data for anything not opened
 in seven days, which is exactly long enough to lose it.
 
-Open **Saved projects → Settings**, give it an endpoint URL and an optional
-token, and projects are read and written there. A badge shows where they live:
-*Online*, *Server unreachable*, or *This device*.
+The endpoint is **built into the app** (`DEFAULT_REMOTE` in `app.js`), so every
+device points at the same server without being set up by hand. The **password**
+is not built in and never should be: this is a public repository, so a password
+committed here would be readable by anyone, and the Worker's only protection is
+that password. It is typed once per device and remembered there.
+
+So a device that has never been used opens **Saved projects** to *Password
+needed* with the form already open and the URL already filled — enter the
+password once and that browser is set up for good. A badge shows where projects
+live: *Online*, *Password needed*, *Server unreachable*, or *This device*.
+*Password needed* is deliberately distinct from *Server unreachable*: one is
+fixed by typing, the other by waiting.
+
+**Device only** turns the server off for that browser and sticks — the built-in
+endpoint does not creep back on the next load. Turning it back on is one tap,
+since the form still offers the built-in URL.
 
 The device store stays on as a fallback, not as the default. If a save fails
 because the server is down, the project is written to IndexedDB and tagged

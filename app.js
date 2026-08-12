@@ -1582,21 +1582,38 @@ function closeSheet() { $('save-sheet').hidden = true; }
    offline fallback that syncs up when the endpoint is reachable again. */
 
 const REMOTE_KEY = 'einkcam.remote';
+
+/* The endpoint is baked in — it is the same server every time, and retyping a
+   URL on a phone is a poor use of anyone's afternoon. The password is not:
+   this repository is public, so a token committed here would be readable by
+   anyone and would protect nothing. It is entered once per device and
+   remembered there, which is why a new device shows Password needed rather
+   than going straight online. */
+const DEFAULT_REMOTE = { url: 'https://e-ink.mew-860.workers.dev', token: '' };
+
+function defaultRemote() {
+  return DEFAULT_REMOTE.url ? Object.assign({}, DEFAULT_REMOTE) : null;
+}
+
 let remote = loadRemote();
 
+/* Three states, not two: configured on this device, explicitly turned off on
+   this device, or untouched — and only the third falls back to the built-in
+   endpoint. Without the {off:true} marker, choosing "Device only" would just
+   restore the default on the next load. */
 function loadRemote() {
   try {
     const r = JSON.parse(localStorage.getItem(REMOTE_KEY));
-    return r && r.url ? r : null;
-  } catch (_) { return null; }
+    if (r && r.off) return null;
+    if (r && r.url) return r;
+  } catch (_) { /* unreadable — treat as untouched */ }
+  return defaultRemote();
 }
 
 function storeRemote(cfg) {
   remote = cfg;
-  try {
-    if (cfg) localStorage.setItem(REMOTE_KEY, JSON.stringify(cfg));
-    else localStorage.removeItem(REMOTE_KEY);
-  } catch (_) { /* private mode — config just will not persist */ }
+  try { localStorage.setItem(REMOTE_KEY, JSON.stringify(cfg || { off: true })); }
+  catch (_) { /* private mode — the choice just will not persist */ }
 }
 
 function apiUrl(path) {
@@ -1837,13 +1854,18 @@ async function removeProject(rec) {
 /* ------------------------------------------------------------------ listing */
 async function gatherProjects() {
   const out = [];
-  let remoteFailed = false;
+  let remoteFailed = false, needsAuth = false;
 
   if (remote) {
     try {
       const data = await (await api('/projects')).json();
-      (data.projects || []).forEach(p => out.push(p));
-    } catch (_) { remoteFailed = true; }
+      (data.projects || []).forEach(p => p && out.push(p));
+    } catch (e) {
+      remoteFailed = true;
+      /* A rejected password is not an unreachable server, and saying so is the
+         difference between "type it in" and "wait and try later". */
+      needsAuth = /HTTP 40[13]/.test(String(e && e.message));
+    }
   }
 
   /* On-device records are only the ones not yet on the server (or all of them
@@ -1853,11 +1875,12 @@ async function gatherProjects() {
   } catch (_) { /* no IndexedDB */ }
 
   out.sort((a, b) => Number(b.id) - Number(a.id));
-  return { list: out, remoteFailed };
+  return { list: out, remoteFailed, needsAuth };
 }
 
-function storeLabel(remoteFailed) {
+function storeLabel(remoteFailed, needsAuth) {
   if (!remote) return ['This device', 'Browser storage can be evicted — add a server to keep projects safely.'];
+  if (needsAuth) return ['Password needed', 'Open Settings and enter the password to use projects on this device.'];
   if (remoteFailed) return ['Server unreachable', 'Showing what is on this device. Saves will sync when the server is back.'];
   return ['Online', remote.url];
 }
@@ -1867,11 +1890,15 @@ async function renderProjects() {
   grid.innerHTML = '';
   await flushPending();
 
-  const { list, remoteFailed } = await gatherProjects();
-  const [label, detail] = storeLabel(remoteFailed);
+  const { list, remoteFailed, needsAuth } = await gatherProjects();
+  const [label, detail] = storeLabel(remoteFailed, needsAuth);
   const badge = $('store-status');
   badge.textContent = label;
   badge.className = 'store-badge ' + (!remote ? 'is-local' : remoteFailed ? 'is-down' : 'is-online');
+
+  /* Nothing works until the password is in, so open the form rather than
+     leaving it behind a Settings tap nobody knows to make. */
+  if (needsAuth && !remote.token) { $('store-form').hidden = false; fillStoreForm(); }
   $('store-detail').textContent = detail;
 
   if (!list.length) {
@@ -1918,9 +1945,12 @@ async function renderProjects() {
 }
 
 /* ------------------------------------------------------------ storage setup */
+/* When storage is off, show the built-in endpoint rather than empty fields, so
+   turning it back on is one tap instead of retyping a token on a phone. */
 function fillStoreForm() {
-  $('store-url').value = remote ? remote.url : '';
-  $('store-token').value = remote ? (remote.token || '') : '';
+  const cfg = remote || defaultRemote();
+  $('store-url').value = cfg ? cfg.url : '';
+  $('store-token').value = cfg ? (cfg.token || '') : '';
 }
 
 async function testEndpoint(url, token) {
@@ -1950,7 +1980,7 @@ function bindStorage() {
     const okay = await testEndpoint(url, $('store-token').value.trim());
     $('store-msg').textContent = okay
       ? 'Reached the server.'
-      : 'No answer. Check the URL, the token, and that the server allows this origin (CORS).';
+      : 'No answer. Check the password first — then the URL, and that the server allows this origin (CORS).';
   });
 
   $('store-form').addEventListener('submit', async e => {
