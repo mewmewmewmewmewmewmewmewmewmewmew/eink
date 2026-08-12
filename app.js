@@ -95,6 +95,7 @@ const state = {
   weight: 1,
   zoom: 1,
   exportRot: 'cw',     // which way a portrait composition turns for export
+  format: 'png',       // 'png' (4-colour indexed) or 'bmp' (24-bit uncompressed)
   facing: 'environment',
   target: 'photo',     // what drag and pinch act on: 'photo' | 'text'
 };
@@ -998,7 +999,11 @@ let dragText = false;
 
 function bindGestures() {
   stage.addEventListener('pointerdown', e => {
-    if (e.target.closest('#target-seg')) return;   // let the pill take its taps
+    /* Capturing the pointer for a drag swallows the click that would have
+       followed, so anything interactive inside the stage — the target pill,
+       the source chooser, the retry button on an error — has to be let
+       through before the gesture starts. */
+    if (e.target.closest('button, label, input')) return;
     try { stage.setPointerCapture(e.pointerId); } catch (_) { /* stale id */ }
     if (ptrs.size === 0) dragText = textGesture();
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1091,9 +1096,20 @@ function blockedStatus() {
     'Try again', () => startCamera());
 }
 
+/* The camera is only opened when it is actually asked for. Starting it on
+   every launch means a permission prompt on every launch for anyone whose
+   browser does not remember the grant, even when they only wanted to pick a
+   photo from the library. */
+function showChooser() {
+  stopCamera();
+  clearStatus();
+  setMode('choose');
+}
+
 async function initCamera() {
-  if (await cameraPermission() === 'denied') { blockedStatus(); return; }
-  startCamera();
+  const p = await cameraPermission();
+  if (p === 'granted') { startCamera(); return; }   // already allowed: no prompt to raise
+  showChooser();
 }
 
 async function startCamera() {
@@ -1170,6 +1186,7 @@ let hintTimer = 0;
 function setMode(m) {
   mode = m;
   document.body.dataset.mode = m;
+  $('chooser').hidden = m !== 'choose';
   layoutPreview();
   if (m === 'review') { renderOnce(); showHint(); }
 }
@@ -1204,8 +1221,7 @@ function capture() {
 }
 
 function backToCamera() {
-  setMode('live');
-  startCamera();
+  showChooser();
 }
 
 function useUpload(img) {
@@ -1256,31 +1272,12 @@ function exportView() {
   return { w: dw, h: dh, idx: out, rotated: true };
 }
 
-function exportCanvas() {
-  const v = exportView();
-  if (!v.rotated) return preview;
-
-  const c = document.createElement('canvas');
-  c.width = v.w; c.height = v.h;
-  const ctx = c.getContext('2d');
-  const im = ctx.createImageData(v.w, v.h);
-  const d = im.data;
-  for (let p = 0; p < v.w * v.h; p++) {
-    const o = p * 4, k = v.idx[p] * 3;
-    d[o] = PAL_FLAT[k]; d[o + 1] = PAL_FLAT[k + 1]; d[o + 2] = PAL_FLAT[k + 2]; d[o + 3] = 255;
-  }
-  ctx.putImageData(im, 0, 0);
-  return c;
-}
 
 function baseName() {
   const v = exportView();
   return `eink-${v.w}x${v.h}-${stamp()}`;
 }
 
-function pngBlob() {
-  return new Promise(res => exportCanvas().toBlob(res, 'image/png'));
-}
 
 /* ------------------------------------------------- indexed PNG encoding */
 /* Canvas only writes 24/32-bit PNGs, where nothing stops a downstream tool
@@ -1385,10 +1382,59 @@ function indexedPngBlob() {
   return new Blob(parts, { type: 'image/png' });
 }
 
-function saveIndexedPNG() {
-  download(indexedPngBlob(), baseName() + '-indexed.png');
+/* 24-bit uncompressed BMP: bottom-up rows, BGR order, each row padded to a
+   4-byte boundary. No compression and no palette indirection, so the bytes on
+   disk are literally the colours — which is about as unambiguous as an image
+   file gets for hardware that wants exactly four of them. */
+function bmpBlob() {
+  const v = exportView();
+  const rowRaw = v.w * 3;
+  const rowPad = (4 - (rowRaw % 4)) % 4;
+  const rowSize = rowRaw + rowPad;
+  const pixels = rowSize * v.h;
+  const offset = 14 + 40;
+  const out = new Uint8Array(offset + pixels);
+  const dv = new DataView(out.buffer);
+
+  out[0] = 0x42; out[1] = 0x4D;                 // 'BM'
+  dv.setUint32(2, out.length, true);
+  dv.setUint32(10, offset, true);
+
+  dv.setUint32(14, 40, true);                   // BITMAPINFOHEADER
+  dv.setInt32(18, v.w, true);
+  dv.setInt32(22, v.h, true);                   // positive: bottom-up
+  dv.setUint16(26, 1, true);                    // planes
+  dv.setUint16(28, 24, true);                   // bits per pixel
+  dv.setUint32(30, 0, true);                    // BI_RGB, uncompressed
+  dv.setUint32(34, pixels, true);
+  dv.setInt32(38, 2835, true);                  // ~72 dpi
+  dv.setInt32(42, 2835, true);
+
+  for (let y = 0; y < v.h; y++) {
+    const src = (v.h - 1 - y) * v.w;            // BMP stores the last row first
+    let o = offset + y * rowSize;
+    for (let x = 0; x < v.w; x++) {
+      const c = v.idx[src + x] * 3;
+      out[o++] = PAL_FLAT[c + 2];               // B
+      out[o++] = PAL_FLAT[c + 1];               // G
+      out[o++] = PAL_FLAT[c];                   // R
+    }
+  }
+  return new Blob([out], { type: 'image/bmp' });
+}
+
+function exportBlob() {
+  return state.format === 'bmp' ? Promise.resolve(bmpBlob()) : Promise.resolve(indexedPngBlob());
+}
+
+function exportExt() { return state.format === 'bmp' ? '.bmp' : '.png'; }
+
+async function saveFile() {
+  const blob = await exportBlob();
+  if (blob) download(blob, baseName() + exportExt());
   closeSheet();
 }
+
 
 function download(blob, name) {
   const url = URL.createObjectURL(blob);
@@ -1402,31 +1448,8 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-async function savePNG() {
-  const blob = await pngBlob();
-  if (blob) download(blob, baseName() + '.png');
-  closeSheet();
-}
 
-/* 2 bits per pixel, MSB first, rows padded to a whole number of bytes,
-   written in the panel's native orientation. */
-function packBin() {
-  const v = exportView();
-  const rowBytes = Math.ceil(v.w / 4);
-  const out = new Uint8Array(rowBytes * v.h);
-  for (let y = 0; y < v.h; y++) {
-    for (let x = 0; x < v.w; x++) {
-      const code = v.idx[y * v.w + x] & 3;
-      out[y * rowBytes + (x >> 2)] |= code << (6 - 2 * (x & 3));
-    }
-  }
-  return out;
-}
 
-function saveBIN() {
-  download(new Blob([packBin()], { type: 'application/octet-stream' }), baseName() + '.bin');
-  closeSheet();
-}
 
 /* iOS has no way for a web page to write straight into the photo album; the
    share sheet's "Save Image" is the supported route, so that is what this
@@ -1440,11 +1463,13 @@ let pendingFile = null;
 
 function prepareShareFile() {
   pendingFile = null;
-  /* exportCanvas(), not the preview: sharing has to go through the same
-     rotation into the panel's native frame that the downloads do. */
-  exportCanvas().toBlob(blob => {
-    if (blob) pendingFile = new File([blob], baseName() + '.png', { type: 'image/png' });
-  }, 'image/png');
+  /* Same encoder as the download, so the two cannot disagree — including the
+     rotation into the panel's native frame. */
+  exportBlob().then(blob => {
+    if (blob) {
+      pendingFile = new File([blob], baseName() + exportExt(), { type: blob.type });
+    }
+  });
 }
 
 function saveToPhotos() {
@@ -1480,6 +1505,10 @@ function openSheet() {
     setSeg('exportrot', state.exportRot);
   }
 
+  setSeg('format', state.format);
+  $('btn-download').textContent = state.format === 'bmp'
+    ? 'Download .bmp' : 'Download .png';
+  $('bmp-note').hidden = !(IOS && state.format === 'bmp');
   $('ios-note').hidden = !IOS;
   $('save-sheet').hidden = false;
   if (sharable) prepareShareFile();
@@ -2257,13 +2286,12 @@ function wire() {
   $('btn-back').addEventListener('click', backToCamera);
   $('btn-save').addEventListener('click', openSheet);
   $('btn-save-close').addEventListener('click', closeSheet);
-  $('btn-png').addEventListener('click', savePNG);
+  $('btn-download').addEventListener('click', saveFile);
   bindSeg('exportrot', v => {
     state.exportRot = v;
     openSheet();                 // refresh the note and the pending share file
   });
-  $('btn-bin').addEventListener('click', saveBIN);
-  $('btn-png-indexed').addEventListener('click', saveIndexedPNG);
+  bindSeg('format', v => { state.format = v; openSheet(); });
 
   sharable = canSharePng();
   if (sharable) {
@@ -2278,6 +2306,8 @@ function wire() {
     btn.addEventListener('click', saveToPhotos);
   }
 
+  $('btn-use-camera').addEventListener('click', () => startCamera());
+  $('btn-use-library').addEventListener('click', () => $('file-input').click());
   $('btn-cam').addEventListener('click', () => {
     state.facing = state.facing === 'environment' ? 'user' : 'environment';
     startCamera();

@@ -29,9 +29,10 @@ body{
   padding-bottom:var(--safe-b);
 }
 
-/* mode-dependent buttons */
-body[data-mode="live"]   .only-review{display:none!important}
-body[data-mode="review"] .only-live{display:none!important}
+/* Mode-dependent buttons. Written as :not() so adding a mode never leaves a
+   control from another one on screen. */
+body:not([data-mode="live"])   .only-live{display:none!important}
+body:not([data-mode="review"]) .only-review{display:none!important}
 
 /* ---------- top ---------- */
 #topbar{display:flex;align-items:center;justify-content:space-between;padding:8px 14px 4px}
@@ -113,6 +114,20 @@ body[data-mode="review"] .only-live{display:none!important}
   opacity:0;transition:opacity .3s;pointer-events:none;
 }
 #hint.show{opacity:1}
+#chooser{
+  position:absolute;inset:auto 24px;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:10px;max-width:320px;margin:0 auto;
+}
+#chooser[hidden]{display:none}
+/* Nothing has been chosen yet, so there is no panel to show. */
+body[data-mode="choose"] #frame{display:none}
+#chooser p{margin:0 0 2px;color:var(--muted);font-size:13px;text-align:center}
+
+.export-label{
+  flex:1;min-width:0;color:var(--muted);
+  font-size:12.5px;
+}
+
 #status{
   position:absolute;inset:auto 16px;top:50%;transform:translateY(-50%);
   text-align:center;color:var(--muted);font-size:14px;line-height:1.5;

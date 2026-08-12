@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-mode="live">
+<body data-mode="choose">
 
 <div id="app">
 
@@ -44,6 +44,11 @@
     <div id="frame">
       <canvas id="preview" width="296" height="128"></canvas>
       <div id="dims">296 × 128</div>
+    </div>
+    <div id="chooser" hidden>
+      <p>Start from</p>
+      <button id="btn-use-camera" class="btn btn-primary">Take a photo</button>
+      <button id="btn-use-library" class="btn">Choose from library</button>
     </div>
     <div id="status" hidden></div>
     <div id="hint">Drag to reposition · pinch to zoom</div>
@@ -237,11 +242,19 @@
         <button class="seg-btn" data-exportrot="ccw" role="radio" aria-checked="false">↺ CCW</button>
       </div>
     </div>
+    <div class="export-row">
+      <span class="export-label">Format</span>
+      <div class="seg seg-sm" role="radiogroup" aria-label="Export format">
+        <button class="seg-btn is-active" data-format="png" role="radio" aria-checked="true">PNG</button>
+        <button class="seg-btn" data-format="bmp" role="radio" aria-checked="false">BMP</button>
+      </div>
+    </div>
+    <p id="bmp-note" class="sheet-note" hidden>Photos may refuse a BMP — if
+      <b>Save Image</b> is missing from the share sheet, use <b>Save to Files</b>
+      there, or Download.</p>
     <button id="btn-save-project" class="btn">Save project <small>keeps layers editable</small></button>
     <button id="btn-photos" class="btn btn-primary" hidden>Save to Photos</button>
-    <button id="btn-png" class="btn">Download PNG</button>
-    <button id="btn-png-indexed" class="btn">Download PNG <small>4-colour indexed, 2bpp</small></button>
-    <button id="btn-bin" class="btn">Download .bin <small>2bpp packed</small></button>
+    <button id="btn-download" class="btn">Download .png</button>
     <p id="ios-note" class="sheet-note" hidden>Saving to Photos is fine. Some
       apps re-encode what they read out of the photo library, though, which is
       what turns four colours into thousands — so if the panel result looks

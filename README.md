@@ -48,6 +48,13 @@ nearest-neighbour, which would drop whole rows of the pattern.
 
 ## Shoot, upload, edit
 
+The app opens on a **source chooser** — *Take a photo* or *Choose from library*
+— rather than reaching for the camera on its own. Starting the camera at launch
+means a permission prompt at launch for anyone whose browser does not remember
+the grant, even when they only wanted to pick an existing photo. If the browser
+does report the camera as already allowed, it starts straight away, since there
+is no prompt to raise.
+
 Press the shutter and the app keeps the **full-resolution** frame, so everything
 stays editable afterwards — crop, rotation and every filter re-run from the
 original pixels rather than from an already-reduced image. The upload button
@@ -262,14 +269,19 @@ error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, an
   route from a web page into the photo album: choose *Save Image* and it lands in
   Photos rather than in Files. Shown wherever the browser can share files (as
   *Share image* on non-Apple platforms).
-- **Download PNG** — exact panel resolution, 4 colours, no resampling. Written
-  by the canvas as a truecolour PNG that happens to contain exactly four values.
-- **Download PNG · indexed** — the same pixels as a **4-entry palette PNG at 2
-  bits per pixel**. A fifth colour is not representable in the file at all, and
-  the palette states the four inks outright, which is a much stronger hint to
-  panel software than a truecolour image that merely happens to be 4-colour.
-  Verified to decode pixel-identical to the truecolour export.
-- **Download .bin** — packed 2 bits per pixel for direct upload to a panel.
+- **Download** — in whichever **format** the sheet is set to:
+  - **PNG** — a 4-entry palette PNG at 2 bits per pixel. A fifth colour is not
+    representable in the file at all, and the palette states the four inks
+    outright, which is a far stronger hint to panel software than a truecolour
+    image that merely happens to be 4-colour.
+  - **BMP** — 24-bit uncompressed, bottom-up, BGR. No compression and no palette
+    indirection, so the bytes on disk are literally the colours. Some panel
+    software is happier with this than with PNG.
+
+  Both are written from the same pixels and verified to decode identically.
+  The format also applies to **Save to Photos**, so the two can never disagree —
+  though Photos may refuse a BMP, in which case the share sheet's *Save to
+  Files* takes it.
 
 ### Where projects are kept
 
@@ -333,22 +345,6 @@ Safari only permits `navigator.share()` directly from a user gesture, so the PNG
 is encoded when the save sheet opens and the button shares the ready-made file —
 awaiting the encode inside the tap handler would spend the gesture and Safari
 would reject the call.
-
-### .bin format
-
-2 bits per pixel, MSB first, 4 pixels per byte, rows padded to a whole number of
-bytes (`ceil(width / 4)` bytes per row), top-left origin, row-major. Colour codes:
-
-| Code | Colour |
-|------|--------|
-| `0`  | black  |
-| `1`  | white  |
-| `2`  | yellow |
-| `3`  | red    |
-
-This is the layout most Waveshare-style 4-colour panels expect. If yours uses a
-different code order, remap it by reordering `PALETTE` in `app.js` — the array
-index *is* the code written to the file.
 
 ## Files
 
