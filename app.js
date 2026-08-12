@@ -1801,7 +1801,9 @@ syncFlip();
 startCamera();
 requestAnimationFrame(loop);
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+/* isSecureContext, not a protocol check: localhost is a secure context too,
+   and testing the worker matters more than the one line it saves. */
+if ('serviceWorker' in navigator && window.isSecureContext) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
