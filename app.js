@@ -92,6 +92,7 @@ const state = {
   edge: 0.5,
   smooth: 1.5,
   detail: 5,
+  weight: 1,
   zoom: 1,
   exportRot: 'cw',     // which way a portrait composition turns for export
   facing: 'environment',
@@ -100,7 +101,7 @@ const state = {
 
 const DEFAULTS = {
   dither: 'fs', exposure: 0, brightness: 0, contrast: 15,
-  saturation: 1.6, gamma: 1, ditherAmt: 0.9, edge: 0.5, smooth: 1.5, detail: 5, zoom: 1,
+  saturation: 1.6, gamma: 1, ditherAmt: 0.9, edge: 0.5, smooth: 1.5, detail: 5, weight: 1, zoom: 1,
 };
 
 /* Crop / rotate. panX and panY are -1..1 across whatever slack the crop
@@ -147,6 +148,8 @@ let tmp = null;        // Float32Array W*H*3, blur scratch
 let luma = null;       // Float32Array W*H, luminance scratch
 let edgeMap = null;    // Float32Array W*H, Sobel magnitude
 let indices = null;    // Uint8Array W*H, palette index per pixel
+let mask = null;       // Uint8Array W*H, line-art coverage
+let maskInk = null;    // Uint8Array W*H, ink chosen for each covered pixel
 let imgData = null;
 
 function allocate() {
@@ -159,6 +162,8 @@ function allocate() {
   luma = new Float32Array(W * H);
   edgeMap = new Float32Array(W * H);
   indices = new Uint8Array(W * H);
+  mask = new Uint8Array(W * H);
+  maskInk = new Uint8Array(W * H);
   imgData = pctx.createImageData(W, H);
   dimsEl.textContent = `${W} × ${H}`;
   markAllTextDirty();        // glyph size is relative to panel height
@@ -569,6 +574,33 @@ function lineRender(cross) {
 /* Contour — iso-luminance lines, like a topographic map. A line is drawn
    wherever a pixel and its neighbour fall in different brightness bands, and
    the bands cycle through the inks so the height reads as colour. */
+/* Grow the marked pixels outward, carrying each one's ink with it.
+
+   A one-pixel line is the first thing to disappear once an image is rescaled
+   or re-dithered by panel software downstream, and it is marginal on the
+   panel itself. Weight buys lines that survive the trip. */
+function dilateMask(radius) {
+  for (let r = 0; r < radius; r++) {
+    const src = mask.slice();
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const p = y * W + x;
+        if (src[p]) continue;
+        let n = -1;
+        if (x > 0 && src[p - 1]) n = p - 1;
+        else if (x < W - 1 && src[p + 1]) n = p + 1;
+        else if (y > 0 && src[p - W]) n = p - W;
+        else if (y < H - 1 && src[p + W]) n = p + W;
+        if (n >= 0) { mask[p] = 1; maskInk[p] = maskInk[n]; }
+      }
+    }
+  }
+}
+
+function paintMask(out, paper) {
+  for (let p = 0; p < W * H; p++) emit(out, p, mask[p] ? maskInk[p] : paper);
+}
+
 function contourRender() {
   const out = imgData.data;
   boxBlur(Math.max(1, Math.round(state.smooth)), 2);
@@ -579,14 +611,18 @@ function contourRender() {
   const line = inks.filter(i => i !== 1);
   const band = p => Math.floor(luma[p] / step);
 
+  mask.fill(0);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const p = y * W + x;
       const b0 = band(p);
-      const edge = b0 !== band(y * W + clampX(x + 1)) || b0 !== band(clampY(y + 1) * W + x);
-      emit(out, p, edge ? line[((b0 % line.length) + line.length) % line.length] : paper);
+      if (b0 === band(y * W + clampX(x + 1)) && b0 === band(clampY(y + 1) * W + x)) continue;
+      mask[p] = 1;
+      maskInk[p] = line[((b0 % line.length) + line.length) % line.length];
     }
   }
+  dilateMask(Math.round(state.weight) - 1);
+  paintMask(out, paper);
 }
 
 function renderStyle() {
@@ -637,8 +673,12 @@ function renderStyle() {
       boxBlur(Math.round(state.smooth), 1);
       computeEdges();
       const thr = edgeThreshold();
-      const paper = inks.indexOf(1) >= 0 ? 1 : inks[0];
-      for (let p = 0; p < W * H; p++) emit(out, p, edgeMap[p] > thr ? 0 : paper);
+      mask.fill(0);
+      for (let p = 0; p < W * H; p++) {
+        if (edgeMap[p] > thr) { mask[p] = 1; maskInk[p] = 0; }
+      }
+      dilateMask(Math.round(state.weight) - 1);
+      paintMask(out, paperInk());
       break;
     }
 
@@ -1768,6 +1808,7 @@ const SLIDERS = [
   ['s-edge',       'edge',       v => v.toFixed(2)],
   ['s-smooth',     'smooth',     v => v.toFixed(1)],
   ['s-detail',     'detail',     v => v.toFixed(1)],
+  ['s-weight',     'weight',     v => v.toFixed(0) + ' px'],
   ['s-zoom',       'zoom',       v => v.toFixed(1) + '×'],
 ];
 

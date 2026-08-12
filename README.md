@@ -119,6 +119,29 @@ what is underneath rather than always black, so a red shirt gets red hatching.
 Those five share one **Detail** slider, relabelled to whatever it means for the
 style: *Misregister*, *Line gap*, or *Spacing*.
 
+**Sketch** and **Contour** add a **Line weight** slider (1–4 px). A one-pixel
+line is the first thing to disappear if panel software rescales or re-dithers
+the image on its way to the display, and it is marginal on the panel itself, so
+weight buys lines that survive the trip.
+
+## Getting it onto a panel
+
+Panel apps generally re-process whatever you upload, which can undo the work:
+
+- **Turn their dithering off.** These exports are already exactly four colours,
+  so a second pass of Floyd–Steinberg re-quantises pixels that were already
+  final and breaks solid one-pixel lines into scattered dots. If the uploader
+  offers *Pure Color* / *no dither* alongside Floyd–Steinberg or Atkinson,
+  choose that.
+- **Do not let it rescale.** Place the image at exact size, with the cell set to
+  the panel's resolution. Any resize interpolates hard edges into intermediate
+  greys, which the app's dithering then scatters.
+- **Avoid yellow for thin lines.** Yellow on white is very low contrast on a
+  physical panel — fine for fills, nearly invisible for hairlines. The `Mono`
+  ink palette forces line styles to solid black, which is the safest choice for
+  line art.
+- **Raise Line weight** if detail still drops out.
+
 **Dither** (Photo only) selects how quantisation error is handled:
 
 - **Diffuse** — Floyd–Steinberg, serpentine scan. Most detail.
