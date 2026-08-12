@@ -57,8 +57,11 @@ body[data-mode="review"] .only-live{display:none!important}
 .seg.is-muted{opacity:.38;pointer-events:none}
 
 /* ---------- stage ---------- */
+/* A tall floor here would win its space from the footer rather than from the
+   drawer, so on a short screen the bottom bar ended up overlapping the
+   controls. Keep it small and let the capped drawer do the bounding. */
 #stage{
-  flex:1 1 auto;min-height:130px;
+  flex:1 1 auto;min-height:56px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:4px 10px;position:relative;gap:6px;
 }
@@ -97,7 +100,17 @@ body[data-mode="review"] .only-live{display:none!important}
 #status b{color:var(--fg);display:block;margin-bottom:4px}
 
 /* ---------- controls ---------- */
-#controls{background:var(--panel);border-top:1px solid var(--line);padding:8px 12px 6px;flex:0 0 auto}
+/* The drawer is capped and scrolls internally rather than growing to fit its
+   contents — left to size itself it ran to 410px, pushing the stage down to
+   its floor and overflowing the viewport. The preview keeps the rest. */
+#controls{
+  background:var(--panel);border-top:1px solid var(--line);
+  padding:8px 12px 6px;
+  display:flex;flex-direction:column;
+  flex:0 1 auto;min-height:0;
+  max-height:min(40vh,380px);
+}
+.ctl-top,.panel-tabs{flex:0 0 auto}
 .ctl-top{display:flex;align-items:center;gap:8px}
 .ctl-top .seg{flex:1;min-width:0}
 .text-btn{
@@ -109,7 +122,14 @@ body[data-mode="review"] .only-live{display:none!important}
 .text-btn:active{color:var(--fg)}
 .chev{display:inline-block;transition:transform .15s}
 #btn-adjust[aria-expanded="true"] .chev{transform:rotate(180deg)}
-#advanced,#textpanel{padding-top:8px}
+/* One scroll region for the whole drawer — nesting a second scroller inside
+   it for the sliders alone makes a flick land on whichever happened to be
+   under the finger. */
+#advanced,#textpanel{
+  padding-top:8px;padding-bottom:4px;
+  flex:1 1 auto;min-height:0;
+  overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+}
 #advanced[hidden],#textpanel[hidden]{display:none}
 
 .panel-tabs{display:flex;gap:6px;margin-top:6px}
@@ -169,7 +189,6 @@ body[data-mode="review"] .only-live{display:none!important}
 .sliders{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
   gap:0 18px;
-  max-height:30vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
 }
 .slider{display:grid;grid-template-columns:74px 1fr 42px;align-items:center;gap:8px;padding:3px 0}
 .slider[hidden]{display:none}
@@ -275,7 +294,19 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
 #gallery-grid p{color:var(--muted);font-size:13px;grid-column:1/-1;text-align:center;margin:20px 0}
 
 @media (max-height:680px){
-  .sliders{max-height:24vh}
   #shutter,#btn-save{width:56px;height:56px}
   #topbar{padding:6px 14px 2px}
+}
+
+/* Landscape phones: trim the chrome so the preview and the drawer both keep
+   something usable. */
+@media (max-height:560px){
+  #topbar{padding:3px 12px 0}
+  .brand-name{display:none}
+  #sizebar{padding:2px 12px 5px}
+  #controls{max-height:46vh;padding:6px 12px 4px}
+  #bottombar{padding:5px 18px 7px}
+  #shutter,#btn-save{width:46px;height:46px}
+  .icon-btn{width:38px;height:38px}
+  .swatches i{height:14px}
 }

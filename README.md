@@ -97,6 +97,15 @@ availability varies by platform. The stacks are written iOS-first (Impact,
 Arial Rounded MT Bold, Bradley Hand), and fall back to generic bold sans, serif
 or cursive elsewhere, so the playful faces look their best on an iPhone.
 
+## Layout
+
+The controls drawer is capped at 40% of the viewport and scrolls internally
+rather than growing to fit its contents. Left to size itself it reached 410px on
+an iPhone 13 — enough to push the preview down to its floor and overflow the
+viewport entirely. With the cap, a 296 × 128 panel stays pixel-exact at 1:1 even
+with the drawer open. The whole drawer is one scroll region rather than a page
+with a separate scroller for the sliders, so a flick always moves the same thing.
+
 ## Adjustments
 
 Exposure, brightness, contrast, saturation and gamma are applied *before*
