@@ -162,7 +162,7 @@ const DEFAULTS = {
 
 /* Crop / rotate. panX and panY are -1..1 across whatever slack the crop
    rectangle has inside the source; at zoom 1 one axis usually has none. */
-const view = { rot: 0, panX: 0, panY: 0, mirror: false };
+const view = { rot: 0, panX: 0, panY: 0, offX: 0, offY: 0, mirror: false };
 
 let W = 296, H = 128;
 let mode = 'live';           // 'live' | 'review'
@@ -274,14 +274,29 @@ function cropGeom(sw, sh) {
      slides it around the margin. Exactly one of the two is ever non-zero on a
      given axis, so both can be driven by the same panX/panY. */
   const marginX = (tw - dw) / 2, marginY = (th - dh) / 2;
+
+  /* Once pan runs out, offX/offY carry the photo on past the edge so it can
+     hang off. They are panel pixels rather than a fraction, because there is
+     no natural extent to be a fraction of. The clamp keeps a fifth of the
+     photo on the panel — enough to be a deliberate composition, not enough to
+     lose the picture off the side and wonder where it went. */
+  const keepX = KEEP_ON_PANEL * Math.min(dw, tw);
+  const keepY = KEEP_ON_PANEL * Math.min(dh, th);
+  const maxCX = (tw + dw) / 2 - keepX, maxCY = (th + dh) / 2 - keepY;
+  const cx = clampAbs(view.panX * marginX + view.offX, maxCX);
+  const cy = clampAbs(view.panY * marginY + view.offY, maxCY);
+
   return {
-    tw, th, cw, ch, dw, dh, slackX, slackY, marginX, marginY,
+    tw, th, cw, ch, dw, dh, slackX, slackY, marginX, marginY, maxCX, maxCY,
     sx: slackX + view.panX * slackX,
     sy: slackY + view.panY * slackY,
-    dx: view.panX * marginX,
-    dy: view.panY * marginY,
+    dx: cx,
+    dy: cy,
   };
 }
+
+const KEEP_ON_PANEL = 0.2;
+function clampAbs(v, m) { return v < -m ? -m : v > m ? m : v; }
 
 function grabFrame(src, sw, sh) {
   if (!sw || !sh) return null;
@@ -881,20 +896,20 @@ function buildTextBitmap(L) {
   tctx.setTransform(1, 0, 0, 1, 0, 0);
   tctx.font = fontCss;
 
-  /* Vertical writing stacks one character per line, the way Japanese
-     tategaki runs — not a rotated line of horizontal text. */
-  const chars = L.vertical ? Array.from(str.replace(/\s+/g, '')) : null;
+  /* Vertical writing stacks one character per line, the way Japanese tategaki
+     runs — not a rotated line of horizontal text. Horizontally, the caption
+     breaks where the typing does: one entry can be several lines. */
+  const lines = L.vertical
+    ? Array.from(str.replace(/\s+/g, ''))
+    : str.replace(/\s+$/, '').split('\n');
   const lineH = px * 1.12;
-  let cw0, ch0;
-  if (chars) {
-    let widest = 0;
-    for (const ch of chars) widest = Math.max(widest, tctx.measureText(ch).width / SS);
-    cw0 = widest + lw * 2 + 6;
-    ch0 = chars.length * lineH + lw * 2 + 6;
-  } else {
-    cw0 = tctx.measureText(str).width / SS + lw * 2 + 6;
-    ch0 = px * 1.5 + lw * 2 + 6;
-  }
+
+  let widest = 0;
+  for (const ln of lines) widest = Math.max(widest, tctx.measureText(ln).width / SS);
+  const cw0 = widest + lw * 2 + 6;
+  const ch0 = (lines.length > 1 || L.vertical)
+    ? lines.length * lineH + lw * 2 + 6
+    : px * 1.5 + lw * 2 + 6;
 
   /* The bitmap has to hold the rotated extent, not the upright one. */
   const rad = ((L.angle || 0) * Math.PI) / 180;
@@ -924,13 +939,9 @@ function buildTextBitmap(L) {
     tctx.translate(cw / 2, ch / 2);
     if (rad) tctx.rotate(rad);
 
-    if (chars) {
-      const step = lineH * SS;
-      let y = -(chars.length - 1) * step / 2;
-      for (const chr of chars) { paint(chr, 0, y); y += step; }
-    } else {
-      paint(str, 0, 0);
-    }
+    const step = lineH * SS;
+    let y = -(lines.length - 1) * step / 2;
+    for (const ln of lines) { if (ln) paint(ln, 0, y); y += step; }
     tctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const d = tctx.getImageData(0, 0, cw, ch).data;
@@ -1141,10 +1152,38 @@ function panBy(dx, dy) {
   }
 
   const perPx = g.cw / g.tw;     // source pixels per output pixel
-  if (g.slackX > 0)      view.panX = clamp1(view.panX - du * perPx / g.slackX);
-  else if (g.marginX > 0) view.panX = clamp1(view.panX + du / g.marginX);
-  if (g.slackY > 0)      view.panY = clamp1(view.panY - dv * perPx / g.slackY);
-  else if (g.marginY > 0) view.panY = clamp1(view.panY + dv / g.marginY);
+  view.panX = slide('panX', 'offX', du, g.slackX, g.marginX, perPx, g.maxCX, g.marginX);
+  view.panY = slide('panY', 'offY', dv, g.slackY, g.marginY, perPx, g.maxCY, g.marginY);
+}
+
+/* One drag has to feed two things in turn: the pan, until the photo is as far
+   over as its crop or its margin allows, and then the overhang. Whatever the
+   pan could not absorb is handed on rather than dropped, so a long drag runs
+   smoothly from one into the other instead of sticking at the limit.
+
+   Pan is inverted in crop mode — there the gesture moves the window, not the
+   picture — which is why the two branches differ in sign. */
+function slide(panKey, offKey, d, slack, margin, perPx, maxC, marginPx) {
+  let pan = view[panKey], used = 0;
+
+  if (slack > 0) {
+    const next = clamp1(pan - d * perPx / slack);
+    used = (pan - next) * slack / perPx;
+    pan = next;
+  } else if (margin > 0) {
+    const next = clamp1(pan + d / margin);
+    used = (next - pan) * margin;
+    pan = next;
+  }
+
+  /* Clamped against what pan already contributes, so the stored offset never
+     runs past the limit — otherwise dragging back would spend the first part
+     of the gesture undoing slack that was never visible. */
+  const centre = pan * marginPx;
+  const lo = -maxC - centre, hi = maxC - centre;
+  const o = view[offKey] + (d - used);
+  view[offKey] = o < lo ? lo : o > hi ? hi : o;
+  return pan;
 }
 function clamp1(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -1216,7 +1255,8 @@ function bindGestures() {
 }
 
 function resetCrop() {
-  view.rot = 0; view.panX = 0; view.panY = 0; view.mirror = false;
+  view.rot = 0; view.panX = 0; view.panY = 0; view.offX = 0; view.offY = 0;
+  view.mirror = false;
   setZoom(1);
   syncFlip();
   kick();
@@ -1402,7 +1442,8 @@ function backToCamera() {
 
 function useUpload(img) {
   stopCamera();
-  view.rot = 0; view.panX = 0; view.panY = 0; view.mirror = false;
+  view.rot = 0; view.panX = 0; view.panY = 0; view.offX = 0; view.offY = 0;
+  view.mirror = false;
   setZoom(1);
   syncFlip();
   lastSource = { el: img, w: img.naturalWidth, h: img.naturalHeight };
@@ -1865,7 +1906,7 @@ async function flushPending() {
    with what is on screen. */
 function applyProjectState(rec) {
   Object.assign(state, rec.state);
-  Object.assign(view, rec.view);
+  Object.assign(view, { offX: 0, offY: 0 }, rec.view);
 
   texts.length = 0;
   (rec.texts && rec.texts.length ? rec.texts : [{}]).forEach((t, i) => {
@@ -2286,6 +2327,7 @@ function syncInkSwatches() {
 function syncTextControls() {
   const L = layer();
   $('t-input').value = L.value;
+  autoSizeInput();
   $('t-size').value = L.size;
   $('ot-size').textContent = L.size.toFixed(2);
   $('t-outline').value = L.outline;
@@ -2359,12 +2401,27 @@ function removeLayer() {
   $('t-input').focus();
 }
 
+/* The field grows with the caption instead of scrolling a one-line window,
+   which matters most on a phone where the drawer is already short. */
+function autoSizeInput() {
+  const el = $('t-input');
+  if (!el.offsetParent) return;          // hidden: nothing to measure
+  /* scrollHeight excludes the border, but height is set on the border box, so
+     the borders would eat two pixels off the last line. */
+  const cs = getComputedStyle(el);
+  const edges = cs.boxSizing === 'border-box'
+    ? parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth) : 0;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight + edges, 96) + 'px';
+}
+
 function bindTextControls() {
   const input = $('t-input');
   input.addEventListener('input', () => {
     const L = layer();
     const had = !!L.value.trim();
     L.value = input.value;
+    autoSizeInput();
     /* Typing the first characters of a caption takes aim at it, so a drag
        straight afterwards moves the new text rather than the photo. After
        that the pill is in charge and this stays out of the way. */
@@ -2463,6 +2520,9 @@ function togglePanel(which) {
      leaves them there, so the caption can be finished against a full preview.
      Closing the drawer is not a reason to change what you were editing. */
   if (openTxt && layer().value.trim()) setTarget('text');
+  /* A hidden field has no scrollHeight to measure, so a caption restored while
+     the drawer was closed has to be re-fitted when it opens. */
+  if (openTxt) autoSizeInput();
   layoutPreview();
   $('hint').textContent = hintText();
   showHint();

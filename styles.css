@@ -184,6 +184,9 @@ body[data-mode="choose"] #frame{display:none}
   background:var(--panel-2);border:1px solid var(--line);color:var(--fg);
   font:inherit;font-size:15px;padding:9px 11px;border-radius:9px;
   -webkit-user-select:text;user-select:text;
+  /* a textarea so Return makes a line break; it grows with the text rather
+     than scrolling a one-line window */
+  resize:none;line-height:1.35;max-height:96px;overflow-y:auto;
 }
 #t-input::placeholder{color:var(--muted)}
 #t-input:focus{outline:none;border-color:var(--accent)}

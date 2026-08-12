@@ -245,6 +245,11 @@ into a 128 px-wide portrait panel without shrinking it to nothing. Spaces are
 dropped in vertical mode, since a blank line reads as a gap rather than a word
 break.
 
+The caption field takes **line breaks** — press Return and the caption runs to
+another line. Lines are centred on each other and the block grows evenly around
+the caption's position, so adding one does not shove the text downwards. The
+field itself grows with the text rather than scrolling a one-line window.
+
 Up to **three captions** are supported. The numbered tabs at the top of the
 drawer switch between them and **＋** adds another; each carries its own text,
 font, size, inks and position, and they stack in order so caption 3 draws over
@@ -318,6 +323,13 @@ Dragging does the sensible thing on either side. Above 1 it pans the crop; below
 1 there is no crop left to pan, so it slides the photo around inside the margin.
 Exactly one of the two is available on a given axis, so the same gesture covers
 both without a mode switch.
+
+Keep dragging past that and the photo **hangs off the edge**, bleeding out of
+the frame with background behind it. Whatever the pan cannot absorb is handed on
+to an overhang offset rather than dropped, so a long drag runs smoothly from one
+into the other instead of sticking at the limit. A fifth of the photo always
+stays on the panel — far enough to be a deliberate composition, not far enough
+to lose the picture off the side and wonder where it went.
 
 **Background** picks which of the four inks fills everything the photo does not
 cover. It is restricted by the ink palette in the same way captions are, so a
