@@ -24,12 +24,33 @@ standalone PWA and works offline.
 
 | Size      | Landscape | Portrait  |
 |-----------|-----------|-----------|
-| 269 × 128 | 269 × 128 | 128 × 269 |
+| 296 × 128 | 296 × 128 | 128 × 296 |
 | 400 × 300 | 400 × 300 | 300 × 400 |
 
 The camera frame is centre-cropped to the panel's aspect ratio and downscaled in
 halving steps (rather than one big jump) so fine detail survives the trip down to
 a few hundred pixels.
+
+The preview is sized to a whole-number multiple of the panel whenever it fits, so
+the dither pattern is shown pixel-exact. When the panel is wider than the screen
+(400 px on a 390 px-wide phone) it is resampled smoothly rather than by
+nearest-neighbour, which would drop whole rows of the pattern.
+
+## Shoot, upload, edit
+
+Press the shutter and the app keeps the **full-resolution** frame, so everything
+stays editable afterwards — crop, rotation and every filter re-run from the
+original pixels rather than from an already-reduced image. The upload button
+(bottom left) puts any photo from your library through exactly the same path.
+
+Once a shot is taken or uploaded:
+
+- **drag** the preview to reposition the crop
+- **pinch** (or scroll) to zoom
+- **↺ ↻** to rotate in quarter turns, **Flip** to mirror
+- **Reset crop** to start the framing over
+
+Crop and zoom work on the live viewfinder too, for framing before the shot.
 
 ## Render styles
 
@@ -63,11 +84,19 @@ error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, an
 
 ## Saving
 
-- **Save PNG** — exact panel resolution, 4 colours, no resampling.
-- **Save .bin** — packed 2 bits per pixel for direct upload to a panel.
-- **Share** — the system share sheet, where the browser supports it.
+- **Save to Photos** — opens the system share sheet. On iPhone this is the only
+  route from a web page into the photo album: choose *Save Image* and it lands in
+  Photos rather than in Files. Shown wherever the browser can share files (as
+  *Share image* on non-Apple platforms).
+- **Download PNG** — exact panel resolution, 4 colours, no resampling.
+- **Download .bin** — packed 2 bits per pixel for direct upload to a panel.
 
-Recent shots are kept in `localStorage` (last 24); tap one to download it again.
+Saved shots are also kept in `localStorage` (last 24); tap one to download again.
+
+Safari only permits `navigator.share()` directly from a user gesture, so the PNG
+is encoded when the save sheet opens and the button shares the ready-made file —
+awaiting the encode inside the tap handler would spend the gesture and Safari
+would reject the call.
 
 ### .bin format
 
@@ -95,5 +124,5 @@ sw.js         offline cache
 manifest.json PWA metadata
 ```
 
-Everything runs on the main thread against typed arrays; a 269 × 128 frame
+Everything runs on the main thread against typed arrays; a 296 × 128 frame
 processes in a few milliseconds, and the preview is capped at 30 fps.

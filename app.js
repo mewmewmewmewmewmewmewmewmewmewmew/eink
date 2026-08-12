@@ -75,10 +75,10 @@ const CLUSTER = (() => {
 })();
 
 /* ------------------------------------------------------------------ state */
-const SIZES = { '269x128': [269, 128], '400x300': [400, 300] };
+const SIZES = { '296x128': [296, 128], '400x300': [400, 300] };
 
 const state = {
-  size: '269x128',
+  size: '296x128',
   orient: 'landscape',
   style: 'photo',
   palette: 'full',
@@ -92,7 +92,6 @@ const state = {
   edge: 0.5,
   smooth: 1.5,
   zoom: 1,
-  mirror: false,
   facing: 'environment',
 };
 
@@ -101,15 +100,22 @@ const DEFAULTS = {
   saturation: 1.6, gamma: 1, ditherAmt: 0.9, edge: 0.5, smooth: 1.5, zoom: 1,
 };
 
-let W = 269, H = 128;
+/* Crop / rotate. panX and panY are -1..1 across whatever slack the crop
+   rectangle has inside the source; at zoom 1 one axis usually has none. */
+const view = { rot: 0, panX: 0, panY: 0, mirror: false };
+
+let W = 296, H = 128;
+let mode = 'live';           // 'live' | 'review'
+
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 
 /* ---------------------------------------------------------------- element */
 const $ = id => document.getElementById(id);
 const video    = $('video');
 const preview  = $('preview');
 const pctx     = preview.getContext('2d');
-const shot     = $('shot');
-const sctx     = shot.getContext('2d');
+const stage    = $('stage');
 const statusEl = $('status');
 const dimsEl   = $('dims');
 
@@ -127,7 +133,12 @@ sctxs.forEach(c => { c.imageSmoothingEnabled = true; c.imageSmoothingQuality = '
 const work = document.createElement('canvas');
 const wctx = work.getContext('2d', { willReadFrequently: true });
 
-/* Working buffers, re-allocated on size change. */
+/* Full-resolution snapshot of the moment the shutter was pressed, so crop,
+   rotate and every filter stay re-editable afterwards without re-quantising
+   from an already-reduced image. */
+const still = document.createElement('canvas');
+const stillCtx = still.getContext('2d');
+
 let buf = null;        // Float32Array W*H*3, post-adjustment RGB
 let tmp = null;        // Float32Array W*H*3, blur scratch
 let luma = null;       // Float32Array W*H, luminance scratch
@@ -147,6 +158,7 @@ function allocate() {
   indices = new Uint8Array(W * H);
   imgData = pctx.createImageData(W, H);
   dimsEl.textContent = `${W} × ${H}`;
+  layoutPreview();
 }
 
 /* ------------------------------------------------------------ tone curve */
@@ -166,37 +178,52 @@ function buildLUT() {
   }
 }
 
-/* ------------------------------------------------------------ frame grab */
-/* Crop the source to the panel aspect ratio (centre "cover" crop), apply
-   digital zoom, downscale progressively, mirror if asked, and hand back the
-   pixels at exactly W x H. */
-function grabFrame(src, sw, sh) {
-  if (!sw || !sh) return null;
+/* --------------------------------------------------------- crop geometry */
+/* The crop rectangle lives in source coordinates. When the image is rotated a
+   quarter turn the panel's width and height swap over before the aspect fit,
+   which is what keeps a rotated crop filling the panel exactly. */
+function cropGeom(sw, sh) {
+  const swap = view.rot === 90 || view.rot === 270;
+  const tw = swap ? H : W, th = swap ? W : H;
+  const ta = tw / th;
 
-  const ta = W / H;
   let cw = sw, ch = sw / ta;
   if (ch > sh) { ch = sh; cw = sh * ta; }
   cw /= state.zoom; ch /= state.zoom;
 
-  let sx = (sw - cw) / 2, sy = (sh - ch) / 2;
-  let el = src, sW = cw, sH = ch, slot = 0;
+  const slackX = (sw - cw) / 2, slackY = (sh - ch) / 2;
+  return {
+    tw, th, cw, ch, slackX, slackY,
+    sx: slackX + view.panX * slackX,
+    sy: slackY + view.panY * slackY,
+  };
+}
 
-  while (sW > W * 2 && sH > H * 2) {
-    const tw = Math.max(W, Math.round(sW / 2));
-    const th = Math.max(H, Math.round(sH / 2));
+function grabFrame(src, sw, sh) {
+  if (!sw || !sh) return null;
+  const g = cropGeom(sw, sh);
+
+  let el = src, sx = g.sx, sy = g.sy, sW = g.cw, sH = g.ch, slot = 0;
+  while (sW > g.tw * 2 && sH > g.th * 2) {
+    const nw = Math.max(g.tw, Math.round(sW / 2));
+    const nh = Math.max(g.th, Math.round(sH / 2));
     const cvs = scratch[slot], ctx = sctxs[slot];
-    if (cvs.width !== tw || cvs.height !== th) {
-      cvs.width = tw; cvs.height = th;
+    if (cvs.width !== nw || cvs.height !== nh) {
+      cvs.width = nw; cvs.height = nh;
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     }
-    ctx.drawImage(el, sx, sy, sW, sH, 0, 0, tw, th);
-    el = cvs; sx = 0; sy = 0; sW = tw; sH = th;
+    ctx.drawImage(el, sx, sy, sW, sH, 0, 0, nw, nh);
+    el = cvs; sx = 0; sy = 0; sW = nw; sH = nh;
     slot ^= 1;
   }
 
+  /* Mirror is applied outside the rotation so it always reads as a left-right
+     flip of the finished frame, whichever way the image has been turned. */
   wctx.save();
-  if (state.mirror) { wctx.translate(W, 0); wctx.scale(-1, 1); }
-  wctx.drawImage(el, sx, sy, sW, sH, 0, 0, W, H);
+  wctx.translate(W / 2, H / 2);
+  if (view.mirror) wctx.scale(-1, 1);
+  if (view.rot) wctx.rotate(view.rot * Math.PI / 180);
+  wctx.drawImage(el, sx, sy, sW, sH, -g.tw / 2, -g.th / 2, g.tw, g.th);
   wctx.restore();
 
   return wctx.getImageData(0, 0, W, H);
@@ -220,18 +247,18 @@ function adjust(src) {
 }
 
 /* -------------------------------------------------------------- dithering */
-function quantize(mode, amt) {
+function quantize(mode_, amt) {
   const out = imgData.data;
 
-  if (mode === 'bayer' || mode === 'cluster') {
-    const ordered = mode === 'bayer' ? BAYER : CLUSTER;
-    const mask = mode === 'bayer' ? 7 : 3;
-    const shift = mode === 'bayer' ? 3 : 2;
-    const spread = (mode === 'bayer' ? 110 : 150) * amt;
+  if (mode_ === 'bayer' || mode_ === 'cluster') {
+    const ordered = mode_ === 'bayer' ? BAYER : CLUSTER;
+    const mask = mode_ === 'bayer' ? 7 : 3;
+    const shift = mode_ === 'bayer' ? 3 : 2;
+    const spreadAmt = (mode_ === 'bayer' ? 110 : 150) * amt;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const j = (y * W + x) * 3;
-        const t = ordered[((y & mask) << shift) + (x & mask)] * spread;
+        const t = ordered[((y & mask) << shift) + (x & mask)] * spreadAmt;
         const idx = nearest(buf[j] + t, buf[j + 1] + t, buf[j + 2] + t);
         emit(out, y * W + x, idx);
       }
@@ -239,7 +266,7 @@ function quantize(mode, amt) {
     return;
   }
 
-  if (mode === 'none') {
+  if (mode_ === 'none') {
     for (let p = 0, j = 0; p < W * H; p++, j += 3) {
       emit(out, p, nearest(buf[j], buf[j + 1], buf[j + 2]));
     }
@@ -247,7 +274,7 @@ function quantize(mode, amt) {
   }
 
   /* Error diffusion. Floyd–Steinberg (serpentine) or Atkinson. */
-  const atkinson = mode === 'atkinson';
+  const atkinson = mode_ === 'atkinson';
   for (let y = 0; y < H; y++) {
     const ltr = atkinson ? true : (y & 1) === 0;   // serpentine for FS only
     const xStart = ltr ? 0 : W - 1;
@@ -323,7 +350,6 @@ function boxBlur(radius, passes) {
   if (radius < 1) return;
   const n = radius * 2 + 1;
   for (let pass = 0; pass < passes; pass++) {
-    // horizontal: buf -> tmp
     for (let y = 0; y < H; y++) {
       const row = y * W * 3;
       let sr = 0, sg = 0, sb = 0;
@@ -341,7 +367,6 @@ function boxBlur(radius, passes) {
         sb += buf[add + 2] - buf[sub + 2];
       }
     }
-    // vertical: tmp -> buf
     for (let x = 0; x < W; x++) {
       const col = x * 3;
       let sr = 0, sg = 0, sb = 0;
@@ -422,23 +447,21 @@ function renderStyle() {
   const out = imgData.data;
 
   switch (state.style) {
-    case 'cel': {
+    case 'cel':
       boxBlur(Math.round(state.smooth), 2);
       computeEdges();
       posterize(4);
       quantize('none', 0);
       inkEdges();
       break;
-    }
 
-    case 'vector': {
+    case 'vector':
       boxBlur(Math.max(1, Math.round(state.smooth * 2)), 2);
       computeEdges();
       posterize(3);
       quantize('none', 0);
       inkEdges();
       break;
-    }
 
     case 'halftone':
       quantize('cluster', state.ditherAmt);
@@ -459,7 +482,7 @@ function renderStyle() {
 }
 
 /* --------------------------------------------------------------- pipeline */
-let lastSource = null;   // {el, w, h} — video or imported still
+let lastSource = null;   // {el, w, h} — video, captured still, or upload
 
 function renderOnce() {
   if (!lastSource) return false;
@@ -471,11 +494,11 @@ function renderOnce() {
   return true;
 }
 
-let rafId = 0, lastDraw = 0, frozen = false;
+let lastDraw = 0;
 
 function loop(ts) {
-  rafId = requestAnimationFrame(loop);
-  if (frozen) return;
+  requestAnimationFrame(loop);
+  if (mode !== 'live') return;
   if (ts - lastDraw < 33) return;          // cap ~30fps
   lastDraw = ts;
   if (lastSource && lastSource.el === video) {
@@ -486,18 +509,129 @@ function loop(ts) {
   renderOnce();
 }
 
-function kick() { if (frozen) renderOnce(); }
+/* Re-render immediately when a control changes and the live loop is paused. */
+function kick() { if (mode !== 'live') renderOnce(); }
+
+/* ------------------------------------------------------- preview sizing */
+/* The canvas box is sized here rather than in CSS. Sizing it with max-width /
+   max-height inside a flex row let the browser stretch it off-aspect, and a
+   fractional scale factor makes nearest-neighbour drop whole rows of dither
+   pattern — so snap to a whole-number multiple whenever the panel fits. */
+let dispScale = 1;
+
+function layoutPreview() {
+  const cs = getComputedStyle(stage);
+  const availW = stage.clientWidth  - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH = stage.clientHeight - parseFloat(cs.paddingTop)  - parseFloat(cs.paddingBottom);
+  if (availW <= 0 || availH <= 0) return;
+
+  let k = Math.min(availW / W, availH / H);
+  if (k >= 1) k = Math.floor(k);
+  if (!(k > 0)) k = availW / W;
+
+  dispScale = k;
+  preview.style.width  = Math.round(W * k) + 'px';
+  preview.style.height = Math.round(H * k) + 'px';
+  preview.classList.toggle('smooth', k < 1);
+}
+
+/* ------------------------------------------------------------ pan / zoom */
+const ptrs = new Map();
+let pinch = null;
+
+function pinchDist() {
+  const [a, b] = [...ptrs.values()];
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function setZoom(z) {
+  state.zoom = Math.min(6, Math.max(1, z));
+  const el = $('s-zoom');
+  el.value = state.zoom;
+  $('o-zoom').textContent = state.zoom.toFixed(1) + '×';
+}
+
+/* Convert a drag in screen space back into the source-space crop offset,
+   undoing the mirror and rotation that sit between the two. */
+function panBy(dx, dy) {
+  if (!lastSource || !dispScale) return;
+  const g = cropGeom(lastSource.w, lastSource.h);
+
+  let ox = dx / dispScale, oy = dy / dispScale;
+  if (view.mirror) ox = -ox;
+
+  let du, dv;
+  switch (view.rot) {
+    case 90:  du =  oy; dv = -ox; break;
+    case 180: du = -ox; dv = -oy; break;
+    case 270: du = -oy; dv =  ox; break;
+    default:  du =  ox; dv =  oy;
+  }
+
+  const perPx = g.cw / g.tw;     // source pixels per output pixel
+  if (g.slackX > 0) view.panX = clamp1(view.panX - du * perPx / g.slackX);
+  if (g.slackY > 0) view.panY = clamp1(view.panY - dv * perPx / g.slackY);
+}
+function clamp1(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
+
+function bindGestures() {
+  preview.addEventListener('pointerdown', e => {
+    preview.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 2) pinch = { dist: pinchDist(), zoom: state.zoom };
+  });
+
+  preview.addEventListener('pointermove', e => {
+    const p = ptrs.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+
+    if (ptrs.size >= 2) {
+      if (pinch && pinch.dist > 0) setZoom(pinch.zoom * pinchDist() / pinch.dist);
+    } else {
+      panBy(dx, dy);
+    }
+    kick();
+  });
+
+  const end = e => {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+  };
+  preview.addEventListener('pointerup', end);
+  preview.addEventListener('pointercancel', end);
+
+  /* Desktop convenience. */
+  preview.addEventListener('wheel', e => {
+    e.preventDefault();
+    setZoom(state.zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08));
+    kick();
+  }, { passive: false });
+}
+
+function resetCrop() {
+  view.rot = 0; view.panX = 0; view.panY = 0; view.mirror = false;
+  setZoom(1);
+  syncFlip();
+  kick();
+}
+
+function rotate(deg) {
+  view.rot = (view.rot + deg + 360) % 360;
+  kick();
+}
 
 /* ----------------------------------------------------------------- camera */
 let stream = null;
 
 async function startCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    setStatus('Camera unavailable', 'This browser has no camera access here. Serve the page over HTTPS, or import a photo with the button below.');
+    setStatus('Camera unavailable',
+      'This browser will not open a camera here. Serve the page over HTTPS, or upload a photo with the button below.');
     return;
   }
   stopCamera();
-  setStatus('Starting camera…', '');
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -510,14 +644,14 @@ async function startCamera() {
     video.srcObject = stream;
     await video.play().catch(() => {});
     lastSource = { el: video, w: video.videoWidth, h: video.videoHeight };
-    frozen = false;
-    state.mirror = state.facing === 'user';
-    syncMirrorBtn();
+    view.mirror = state.facing === 'user';
+    syncFlip();
+    setMode('live');
     clearStatus();
   } catch (err) {
     setStatus('No camera', err && err.name === 'NotAllowedError'
-      ? 'Camera permission was denied. Allow it in your browser settings, or import a photo instead.'
-      : 'Could not open the camera. You can still import a photo.');
+      ? 'Camera permission was denied. Allow it in your browser settings, or upload a photo instead.'
+      : 'Could not open the camera. You can still upload a photo.');
   }
 }
 
@@ -534,6 +668,23 @@ function setStatus(title, body) {
 }
 function clearStatus() { statusEl.hidden = true; }
 
+/* ------------------------------------------------------------------ modes */
+let hintTimer = 0;
+
+function setMode(m) {
+  mode = m;
+  document.body.dataset.mode = m;
+  layoutPreview();
+  if (m === 'review') { renderOnce(); showHint(); }
+}
+
+function showHint() {
+  const el = $('hint');
+  el.classList.add('show');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
 /* ------------------------------------------------------------------ sizes */
 function applySize() {
   const [a, b] = SIZES[state.size];
@@ -543,46 +694,43 @@ function applySize() {
 }
 
 /* ---------------------------------------------------------------- capture */
-let shotIndices = null, shotW = 0, shotH = 0;
-
 function capture() {
-  if (!lastSource) return;
-  if (!renderOnce()) return;
+  if (mode !== 'live' || !lastSource) return;
+  const { el, w, h } = lastSource;
+  if (!w || !h) return;
 
-  shotW = W; shotH = H;
-  shotIndices = indices.slice();
-  shot.width = W; shot.height = H;
-  sctx.imageSmoothingEnabled = false;
-  sctx.drawImage(preview, 0, 0);
-
-  /* Show it at a sensible on-screen size (integer upscale where possible). */
-  const maxW = Math.min(window.innerWidth - 32, 520);
-  const scale = Math.max(1, Math.floor(maxW / W)) || 1;
-  shot.style.width = Math.min(maxW, W * scale) + 'px';
-
-  const counts = [0, 0, 0, 0];
-  for (let i = 0; i < shotIndices.length; i++) counts[shotIndices[i]]++;
-  const total = shotIndices.length;
-  $('shot-meta').textContent =
-    `${W}×${H} · ` + PAL_NAMES
-      .map((n, i) => `${n} ${Math.round(counts[i] / total * 100)}%`)
-      .join(' · ');
-
-  frozen = true;
-  $('result').hidden = false;
-  saveToGallery();
+  still.width = w; still.height = h;
+  stillCtx.drawImage(el, 0, 0, w, h);
+  lastSource = { el: still, w, h };
+  stopCamera();
+  setMode('review');
 }
 
-function endCapture() {
-  $('result').hidden = true;
-  frozen = false;
-  shotIndices = null;
+function backToCamera() {
+  setMode('live');
+  startCamera();
+}
+
+function useUpload(img) {
+  stopCamera();
+  view.rot = 0; view.panX = 0; view.panY = 0; view.mirror = false;
+  setZoom(1);
+  syncFlip();
+  lastSource = { el: img, w: img.naturalWidth, h: img.naturalHeight };
+  clearStatus();
+  setMode('review');
 }
 
 /* ----------------------------------------------------------------- export */
 function stamp() {
   const d = new Date(), p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function baseName() { return `eink-${W}x${H}-${stamp()}`; }
+
+function pngBlob() {
+  return new Promise(res => preview.toBlob(res, 'image/png'));
 }
 
 function download(blob, name) {
@@ -595,41 +743,77 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-function savePNG() {
-  shot.toBlob(b => b && download(b, `eink-${shotW}x${shotH}-${stamp()}.png`), 'image/png');
+async function savePNG() {
+  const blob = await pngBlob();
+  if (blob) download(blob, baseName() + '.png');
+  saveToGallery();
+  closeSheet();
 }
 
 /* 2 bits per pixel, MSB first, rows padded to a whole number of bytes. */
 function packBin() {
-  const rowBytes = Math.ceil(shotW / 4);
-  const out = new Uint8Array(rowBytes * shotH);
-  for (let y = 0; y < shotH; y++) {
-    for (let x = 0; x < shotW; x++) {
-      const code = shotIndices[y * shotW + x] & 3;
-      const o = y * rowBytes + (x >> 2);
-      out[o] |= code << (6 - 2 * (x & 3));
+  const rowBytes = Math.ceil(W / 4);
+  const out = new Uint8Array(rowBytes * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const code = indices[y * W + x] & 3;
+      out[y * rowBytes + (x >> 2)] |= code << (6 - 2 * (x & 3));
     }
   }
   return out;
 }
 
 function saveBIN() {
-  if (!shotIndices) return;
-  download(new Blob([packBin()], { type: 'application/octet-stream' }),
-           `eink-${shotW}x${shotH}-${stamp()}.bin`);
+  download(new Blob([packBin()], { type: 'application/octet-stream' }), baseName() + '.bin');
+  saveToGallery();
+  closeSheet();
 }
 
-async function share() {
-  shot.toBlob(async blob => {
-    if (!blob) return;
-    const file = new File([blob], `eink-${shotW}x${shotH}.png`, { type: 'image/png' });
-    try {
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'E-Ink photo' });
-      }
-    } catch (_) { /* user cancelled */ }
+/* iOS has no way for a web page to write straight into the photo album; the
+   share sheet's "Save Image" is the supported route, so that is what this
+   button opens.
+
+   Safari only allows navigator.share() straight out of a user gesture, and
+   awaiting toBlob() first spends that activation — so the PNG is encoded up
+   front when the sheet opens and the tap handler shares the ready-made file
+   without awaiting anything before the call. */
+let pendingFile = null;
+
+function prepareShareFile() {
+  pendingFile = null;
+  preview.toBlob(blob => {
+    if (blob) pendingFile = new File([blob], baseName() + '.png', { type: 'image/png' });
   }, 'image/png');
 }
+
+function saveToPhotos() {
+  if (!pendingFile) return;                 // still encoding; tap again
+  const done = () => { saveToGallery(); closeSheet(); };
+  navigator.share({ files: [pendingFile], title: 'E-Ink photo' })
+    .then(done)
+    .catch(() => closeSheet());             // user cancelled the sheet
+}
+
+let sharable = false;
+
+function canSharePng() {
+  try {
+    const f = new File([new Uint8Array([0])], 'a.png', { type: 'image/png' });
+    return !!(navigator.canShare && navigator.canShare({ files: [f] }) && navigator.share);
+  } catch (_) { return false; }
+}
+
+function openSheet() {
+  if (mode !== 'review') return;
+  const counts = [0, 0, 0, 0];
+  for (let i = 0; i < indices.length; i++) counts[indices[i]]++;
+  const total = indices.length || 1;
+  $('shot-meta').textContent = `${W}×${H} · ` +
+    PAL_NAMES.map((n, i) => `${n} ${Math.round(counts[i] / total * 100)}%`).join(' · ');
+  $('save-sheet').hidden = false;
+  if (sharable) prepareShareFile();
+}
+function closeSheet() { $('save-sheet').hidden = true; }
 
 /* ---------------------------------------------------------------- gallery */
 const GKEY = 'einkcam.shots';
@@ -651,7 +835,7 @@ function updateGalleryBadge(n) {
 }
 function saveToGallery() {
   const list = loadGallery();
-  list.unshift({ t: Date.now(), w: shotW, h: shotH, d: shot.toDataURL('image/png') });
+  list.unshift({ t: Date.now(), w: W, h: H, d: preview.toDataURL('image/png') });
   storeGallery(list.slice(0, GMAX));
 }
 function renderGallery() {
@@ -691,8 +875,7 @@ function renderGallery() {
 function bindSeg(attr, apply) {
   document.querySelectorAll(`[data-${attr}]`).forEach(btn => {
     btn.addEventListener('click', () => {
-      const group = btn.parentElement;
-      group.querySelectorAll('.seg-btn').forEach(b => {
+      btn.parentElement.querySelectorAll('.seg-btn').forEach(b => {
         b.classList.remove('is-active');
         b.setAttribute('aria-checked', 'false');
       });
@@ -722,6 +905,10 @@ function syncStyleUI() {
     el.hidden = !el.dataset.styles.split(' ').includes(state.style);
   });
   $('dither-seg').classList.toggle('is-muted', state.style !== 'photo');
+}
+
+function syncFlip() {
+  $('btn-flip').setAttribute('aria-pressed', String(view.mirror));
 }
 
 function applyPalette() {
@@ -759,10 +946,6 @@ function resetAdjustments() {
   kick();
 }
 
-function syncMirrorBtn() {
-  $('btn-mirror').classList.toggle('is-on', state.mirror);
-}
-
 function wire() {
   bindSeg('size',    v => { state.size = v; applySize(); });
   bindSeg('orient',  v => { state.orient = v; applySize(); });
@@ -773,24 +956,40 @@ function wire() {
   bindSliders();
   buildLUT();
   syncStyleUI();
+  bindGestures();
+
+  $('btn-adjust').addEventListener('click', () => {
+    const adv = $('advanced'), open = adv.hidden;
+    adv.hidden = !open;
+    $('btn-adjust').setAttribute('aria-expanded', String(open));
+    layoutPreview();
+  });
 
   $('btn-reset').addEventListener('click', resetAdjustments);
+  $('btn-rot-l').addEventListener('click', () => rotate(-90));
+  $('btn-rot-r').addEventListener('click', () => rotate(90));
+  $('btn-rot-quick').addEventListener('click', () => rotate(90));
+  $('btn-fit').addEventListener('click', resetCrop);
+  $('btn-flip').addEventListener('click', () => {
+    view.mirror = !view.mirror; syncFlip(); kick();
+  });
+
   $('shutter').addEventListener('click', capture);
-  $('btn-retake').addEventListener('click', endCapture);
+  $('btn-back').addEventListener('click', backToCamera);
+  $('btn-save').addEventListener('click', openSheet);
+  $('btn-save-close').addEventListener('click', closeSheet);
   $('btn-png').addEventListener('click', savePNG);
   $('btn-bin').addEventListener('click', saveBIN);
 
-  if (navigator.canShare) {
-    const btn = $('btn-share');
+  sharable = canSharePng();
+  if (sharable) {
+    const btn = $('btn-photos');
     btn.hidden = false;
-    btn.addEventListener('click', share);
+    btn.textContent = IOS ? 'Save to Photos' : 'Share image';
+    btn.addEventListener('click', saveToPhotos);
   }
 
-  $('btn-mirror').addEventListener('click', () => {
-    state.mirror = !state.mirror; syncMirrorBtn(); kick();
-  });
-
-  $('btn-flip').addEventListener('click', () => {
+  $('btn-cam').addEventListener('click', () => {
     state.facing = state.facing === 'environment' ? 'user' : 'environment';
     startCamera();
   });
@@ -800,15 +999,7 @@ function wire() {
     if (!file) return;
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      stopCamera();
-      state.mirror = false; syncMirrorBtn();
-      lastSource = { el: img, w: img.naturalWidth, h: img.naturalHeight };
-      frozen = true;
-      clearStatus();
-      renderOnce();
-      URL.revokeObjectURL(url);
-    };
+    img.onload = () => { useUpload(img); URL.revokeObjectURL(url); };
     img.onerror = () => { URL.revokeObjectURL(url); setStatus('Could not read that image', ''); };
     img.src = url;
     e.target.value = '';
@@ -823,26 +1014,26 @@ function wire() {
   $('btn-help').addEventListener('click', () => { $('help').hidden = false; });
   $('btn-help-close').addEventListener('click', () => { $('help').hidden = true; });
 
-  /* Tap the frozen preview to resume the live view. */
-  preview.addEventListener('click', () => {
-    if (frozen && $('result').hidden && lastSource && lastSource.el !== video) return;
-    if (frozen && $('result').hidden) frozen = false;
-  });
-
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopCamera();
-    else if (!stream && lastSource && lastSource.el === video) startCamera();
+    else if (!stream && mode === 'live') startCamera();
   });
 
-  window.addEventListener('orientationchange', () => setTimeout(kick, 300));
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => layoutPreview()).observe(stage);
+  } else {
+    window.addEventListener('resize', layoutPreview);
+  }
+  window.addEventListener('orientationchange', () => setTimeout(layoutPreview, 300));
 }
 
 /* -------------------------------------------------------------------- go */
 applySize();
 wire();
+syncFlip();
 updateGalleryBadge(loadGallery().length);
 startCamera();
-rafId = requestAnimationFrame(loop);
+requestAnimationFrame(loop);
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
