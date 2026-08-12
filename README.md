@@ -141,6 +141,22 @@ Panel apps generally re-process whatever you upload, which can undo the work:
   ink palette forces line styles to solid black, which is the safest choice for
   line art.
 - **Raise Line weight** if detail still drops out.
+- **Never let it become a JPEG.** JPEG cannot represent hard 4-colour edges: the
+  same export saved as JPEG q0.9 goes from 4 distinct colours to **6,541**, with
+  only 26% of pixels still exactly on-palette. If a step in the chain
+  re-encodes as JPEG, no dithering setting downstream can recover it.
+
+### Checking a file
+
+Judging this by eye on a phone does not work. Zooming interpolates, and iOS
+screenshots are re-tagged to the display's colour space, so a perfectly pure
+file still shows pink and cream fringes on screen — the impurity is in the
+screenshot, not the file.
+
+**About › Check a file** takes any image and reports what it actually contains:
+type, dimensions, every distinct colour, and what share of pixels are exactly
+the four inks. Run it on an export to confirm it left clean, and on anything you
+can retrieve from the panel software to see what that software did to it.
 
 **Dither** (Photo only) selects how quantisation error is handled:
 
@@ -230,7 +246,13 @@ error-diffusion strength, `Outline` and `Smooth` drive the edge-based styles, an
   route from a web page into the photo album: choose *Save Image* and it lands in
   Photos rather than in Files. Shown wherever the browser can share files (as
   *Share image* on non-Apple platforms).
-- **Download PNG** — exact panel resolution, 4 colours, no resampling.
+- **Download PNG** — exact panel resolution, 4 colours, no resampling. Written
+  by the canvas as a truecolour PNG that happens to contain exactly four values.
+- **Download PNG · indexed** — the same pixels as a **4-entry palette PNG at 2
+  bits per pixel**. A fifth colour is not representable in the file at all, and
+  the palette states the four inks outright, which is a much stronger hint to
+  panel software than a truecolour image that merely happens to be 4-colour.
+  Verified to decode pixel-identical to the truecolour export.
 - **Download .bin** — packed 2 bits per pixel for direct upload to a panel.
 
 ### Where projects are kept

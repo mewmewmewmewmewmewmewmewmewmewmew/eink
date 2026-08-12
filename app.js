@@ -1282,6 +1282,114 @@ function pngBlob() {
   return new Promise(res => exportCanvas().toBlob(res, 'image/png'));
 }
 
+/* ------------------------------------------------- indexed PNG encoding */
+/* Canvas only writes 24/32-bit PNGs, where nothing stops a downstream tool
+   from resampling a pixel into a fifth colour. An indexed PNG carries a
+   4-entry palette and 2 bits per pixel, so an off-palette colour is not
+   representable at all — the file itself states that these four are the only
+   colours, which is a far stronger hint to panel software than a truecolour
+   image that happens to contain four values. */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function adler32(bytes) {
+  let a = 1, b = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    a = (a + bytes[i]) % 65521;
+    b = (b + a) % 65521;
+  }
+  return (((b << 16) | a) >>> 0);
+}
+
+/* Stored (uncompressed) deflate blocks. A 4-colour panel image at 2bpp is
+   tens of kilobytes at worst, so this trades a little size for having no
+   compressor to get wrong. */
+function zlibStore(raw) {
+  const MAX = 65535;
+  const blocks = Math.max(1, Math.ceil(raw.length / MAX));
+  const out = new Uint8Array(2 + blocks * 5 + raw.length + 4);
+  let o = 0;
+  out[o++] = 0x78; out[o++] = 0x01;
+  for (let i = 0; i < blocks; i++) {
+    const start = i * MAX;
+    const len = Math.min(MAX, raw.length - start);
+    out[o++] = (i === blocks - 1) ? 1 : 0;
+    out[o++] = len & 0xFF;
+    out[o++] = (len >>> 8) & 0xFF;
+    out[o++] = (~len) & 0xFF;
+    out[o++] = ((~len) >>> 8) & 0xFF;
+    out.set(raw.subarray(start, start + len), o);
+    o += len;
+  }
+  const ad = adler32(raw);
+  out[o++] = (ad >>> 24) & 0xFF; out[o++] = (ad >>> 16) & 0xFF;
+  out[o++] = (ad >>> 8) & 0xFF;  out[o++] = ad & 0xFF;
+  return out.subarray(0, o);
+}
+
+function pngChunk(type, data) {
+  const out = new Uint8Array(12 + data.length);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, data.length);
+  for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
+  out.set(data, 8);
+  dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
+  return out;
+}
+
+function indexedPngBlob() {
+  const v = exportView();
+  const rowBytes = Math.ceil(v.w / 4);
+  const raw = new Uint8Array((rowBytes + 1) * v.h);
+  for (let y = 0; y < v.h; y++) {
+    const ro = y * (rowBytes + 1);
+    raw[ro] = 0;                                   // filter type: none
+    for (let x = 0; x < v.w; x++) {
+      raw[ro + 1 + (x >> 2)] |= (v.idx[y * v.w + x] & 3) << (6 - 2 * (x & 3));
+    }
+  }
+
+  const ihdr = new Uint8Array(13);
+  const dv = new DataView(ihdr.buffer);
+  dv.setUint32(0, v.w);
+  dv.setUint32(4, v.h);
+  ihdr[8] = 2;      // 2 bits per pixel
+  ihdr[9] = 3;      // colour type 3: indexed
+  const plte = new Uint8Array(12);
+  for (let i = 0; i < 4; i++) {
+    plte[i * 3]     = PALETTE[i][0];
+    plte[i * 3 + 1] = PALETTE[i][1];
+    plte[i * 3 + 2] = PALETTE[i][2];
+  }
+
+  const parts = [
+    new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('PLTE', plte),
+    pngChunk('IDAT', zlibStore(raw)),
+    pngChunk('IEND', new Uint8Array(0)),
+  ];
+  return new Blob(parts, { type: 'image/png' });
+}
+
+function saveIndexedPNG() {
+  download(indexedPngBlob(), baseName() + '-indexed.png');
+  closeSheet();
+}
+
 function download(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1774,6 +1882,71 @@ function bindStorage() {
   });
 }
 
+/* A file inspector, because the usual way of judging this — zooming in on a
+   phone and looking — cannot work: the zoom interpolates and the screenshot
+   is re-tagged to the display colour space, so a pure file still shows
+   impure pixels. This reads the actual decoded pixels. */
+function bindChecker() {
+  const input = $('chk-input'), out = $('chk-out');
+  input.addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height).data;
+
+      const counts = new Map();
+      let onPalette = 0;
+      const pal = new Set(PALETTE.map(p => p.join(',')));
+      for (let p = 0; p < d.length; p += 4) {
+        const k = d[p] + ',' + d[p + 1] + ',' + d[p + 2];
+        counts.set(k, (counts.get(k) || 0) + 1);
+        if (pal.has(k)) onPalette++;
+      }
+      const total = d.length / 4;
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const stray = sorted.filter(([k]) => !pal.has(k));
+      const pct = n => (n / total * 100).toFixed(2) + '%';
+
+      const lines = [];
+      lines.push(`file    ${file.name}`);
+      lines.push(`type    ${file.type || 'unknown'}${/jpe?g/i.test(file.type) ? '   <-- JPEG cannot hold hard 4-colour edges' : ''}`);
+      lines.push(`size    ${c.width} x ${c.height}`);
+      lines.push(`colours ${counts.size} distinct`);
+      lines.push(`palette ${pct(onPalette)} of pixels are exactly the four inks`);
+      lines.push('');
+      sorted.slice(0, 8).forEach(([k, n]) => {
+        const rgb = k.split(',').map(Number);
+        const hex = '#' + rgb.map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+        lines.push(`  ${pal.has(k) ? 'ok ' : '>> '}${hex}  ${pct(n).padStart(7)}`);
+      });
+      if (stray.length) {
+        lines.push('');
+        lines.push(`${stray.length} colour${stray.length === 1 ? '' : 's'} outside the palette.`);
+        lines.push('Something in the chain resampled or recompressed this.');
+      } else {
+        lines.push('');
+        lines.push('Clean: nothing but the four panel inks.');
+      }
+      out.textContent = lines.join('\n');
+      out.hidden = false;
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      out.textContent = 'Could not read that file as an image.';
+      out.hidden = false;
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+    e.target.value = '';
+  });
+}
+
 let toastTimer = 0;
 function toast(msg) {
   const el = $('toast');
@@ -2085,6 +2258,7 @@ function wire() {
     openSheet();                 // refresh the note and the pending share file
   });
   $('btn-bin').addEventListener('click', saveBIN);
+  $('btn-png-indexed').addEventListener('click', saveIndexedPNG);
 
   sharable = canSharePng();
   if (sharable) {
@@ -2115,6 +2289,7 @@ function wire() {
   $('btn-save-project').addEventListener('click', saveProject);
   bindStorage();
 
+  bindChecker();
   $('btn-help').addEventListener('click', () => { $('help').hidden = false; });
   $('btn-help-close').addEventListener('click', () => { $('help').hidden = true; });
 

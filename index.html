@@ -240,6 +240,7 @@
     <button id="btn-save-project" class="btn">Save project <small>keeps layers editable</small></button>
     <button id="btn-photos" class="btn btn-primary" hidden>Save to Photos</button>
     <button id="btn-png" class="btn">Download PNG</button>
+    <button id="btn-png-indexed" class="btn">Download PNG <small>4-colour indexed, 2bpp</small></button>
     <button id="btn-bin" class="btn">Download .bin <small>2bpp packed</small></button>
     <button id="btn-save-close" class="btn btn-quiet">Cancel</button>
   </div>
@@ -286,6 +287,11 @@
       <p><b>Diffuse / Atkinson</b> spread the quantisation error into neighbouring pixels for photographic texture. <b>Ordered</b> uses a fixed 8×8 pattern. <b>Flat</b> does no dithering. The <b>ink palette</b> row restricts which of the four colours may be used.</p>
       <p><b>Crop and rotate:</b> drag to reposition, pinch to zoom, and use ↺ ↻ to rotate. Gestures work anywhere in the preview area, including the space beside a narrow portrait panel. This works on the live view, on a photo you have just taken, and on any photo you upload.</p>
       <p><b>Text</b> is drawn after the image is reduced to four colours, so captions stay sharp instead of dissolving into the dither. Pick any ink for the letters and the outline, set the outline thickness, then use the <b>Photo / Text</b> pill over the preview to choose what dragging and pinching move, so the caption can be placed against a full-size preview. Up to three captions are supported — the numbered tabs switch between them, and each keeps its own text, font, size, inks and position. Fonts come from the device, including four Japanese faces, so the distinctive ones look their best on iOS.</p>
+      <p><b>Check a file</b> — pick any image and this reports what it really contains: its type, its size, and every colour in it. A phone screenshot cannot answer that, because zooming interpolates and screenshots are re-tagged to the display's colour space, so a pure file still looks impure on screen.</p>
+      <label class="btn btn-block">Choose an image to check
+        <input type="file" id="chk-input" accept="image/*" hidden></label>
+      <pre id="chk-out" hidden></pre>
+
       <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Save project</b> keeps the shot editable — the background, the crop and every caption come back when you reopen it from the folder button. Point it at a server under Saved projects → Settings and projects live there rather than in browser storage, which phones are free to evict; the device is used only as a fallback when the server cannot be reached. <b>Download PNG</b> writes the image at exact panel resolution. Exports are always in the panel's native landscape frame — a portrait composition is turned a quarter turn on the way out, in whichever direction you pick in the save sheet, since the panel's buffer is the same shape however you mount it. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
     </div>
   </div>
