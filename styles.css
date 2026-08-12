@@ -60,11 +60,27 @@ body[data-mode="review"] .only-live{display:none!important}
 /* A tall floor here would win its space from the footer rather than from the
    drawer, so on a short screen the bottom bar ended up overlapping the
    controls. Keep it small and let the capped drawer do the bounding. */
+/* Drag and pinch are bound to the whole stage, not just the canvas: a portrait
+   panel is only ~128px wide on screen, which is far too narrow to land two
+   fingers on reliably. touch-action must be off across the same area. */
 #stage{
   flex:1 1 auto;min-height:56px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:4px 10px;position:relative;gap:6px;
+  touch-action:none;
 }
+
+/* Floating pill: says what a drag will move, and switches it, without
+   costing layout height or needing a drawer open. */
+.seg-float{
+  position:absolute;top:2px;right:8px;z-index:3;
+  flex:0 0 auto;width:auto;
+  background:rgba(25,27,31,.86);
+  backdrop-filter:blur(6px);
+  padding:2px;border-radius:9px;
+}
+.seg-float .seg-btn{font-size:11px;padding:5px 11px;flex:0 0 auto}
+.seg-float[hidden]{display:none}
 /* NOT a flex container: a canvas as a flex item gets stretched by align-items
    and loses its aspect ratio. Its box is sized explicitly from JS instead. */
 #frame{position:relative;display:block;line-height:0}

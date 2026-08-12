@@ -45,12 +45,17 @@ original pixels rather than from an already-reduced image. The upload button
 
 Once a shot is taken or uploaded:
 
-- **drag** the preview to reposition the crop
+- **drag** to reposition the crop
 - **pinch** (or scroll) to zoom
 - **↺ ↻** to rotate in quarter turns, **Flip** to mirror
 - **Reset crop** to start the framing over
 
 Crop and zoom work on the live viewfinder too, for framing before the shot.
+
+Gestures are picked up across the **whole preview area**, not just the canvas
+itself: a portrait 296 × 128 panel is only 128 px wide on screen, which is not
+enough to land two fingers on, so a pinch may start anywhere in the empty space
+beside it.
 
 ## Render styles
 
@@ -77,8 +82,13 @@ a deliberate look.
 ## Text
 
 Open the **Text** drawer, type a caption, and place it by dragging the preview;
-pinch (or use the Size slider) to resize. While that drawer is open the preview's
-drag and pinch belong to the caption — close it and they go back to the crop.
+pinch (or use the Size slider) to resize.
+
+A **Photo / Text** pill appears over the preview as soon as there is a caption,
+and decides what drag and pinch move. Opening the Text drawer aims it at the
+caption, but it is independent of the drawers — so you can collapse them and
+position the caption against a full-size preview. It disappears, and control
+returns to the photo, when the caption is cleared.
 
 The caption is drawn **after** the image has been reduced to four colours, using
 palette inks directly. Putting it through the dither instead would smear the

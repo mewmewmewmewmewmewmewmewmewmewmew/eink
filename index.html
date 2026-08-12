@@ -39,6 +39,10 @@
   </div>
 
   <main id="stage">
+    <div id="target-seg" class="seg seg-float" role="radiogroup" aria-label="What drag and pinch control" hidden>
+      <button class="seg-btn is-active" data-target="photo" role="radio" aria-checked="true">Photo</button>
+      <button class="seg-btn" data-target="text" role="radio" aria-checked="false">Text</button>
+    </div>
     <div id="frame">
       <canvas id="preview" width="296" height="128"></canvas>
       <div id="dims">296 × 128</div>
@@ -233,8 +237,8 @@
       <p>Every pixel is snapped to one of four colours — black, red, yellow, white — the palette used by 4-colour e-ink panels. What you see in the viewfinder is exactly what gets saved.</p>
       <p><b>Photo</b> keeps full tonal detail through dithering. <b>Cel</b> flattens the image into anime-style colour areas with inked outlines. <b>Vector</b> pushes that further — big poster-flat shapes. <b>Halftone</b> uses clustered print dots. <b>Sketch</b> keeps only the outlines on white.</p>
       <p><b>Diffuse / Atkinson</b> spread the quantisation error into neighbouring pixels for photographic texture. <b>Ordered</b> uses a fixed 8×8 pattern. <b>Flat</b> does no dithering. The <b>ink palette</b> row restricts which of the four colours may be used.</p>
-      <p><b>Crop and rotate:</b> drag the preview to reposition, pinch to zoom, and use ↺ ↻ to rotate. This works on the live view, on a photo you have just taken, and on any photo you upload.</p>
-      <p><b>Text</b> is drawn after the image is reduced to four colours, so captions stay sharp instead of dissolving into the dither. Pick any ink for the letters and the outline, set the outline thickness, then drag the preview to place it and pinch to resize while the Text panel is open. Fonts come from the device, so the playful ones look their best on iOS.</p>
+      <p><b>Crop and rotate:</b> drag to reposition, pinch to zoom, and use ↺ ↻ to rotate. Gestures work anywhere in the preview area, including the space beside a narrow portrait panel. This works on the live view, on a photo you have just taken, and on any photo you upload.</p>
+      <p><b>Text</b> is drawn after the image is reduced to four colours, so captions stay sharp instead of dissolving into the dither. Pick any ink for the letters and the outline, set the outline thickness, then use the <b>Photo / Text</b> pill over the preview to choose what dragging and pinching move, so the caption can be placed against a full-size preview. Fonts come from the device, so the playful ones look their best on iOS.</p>
       <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Download PNG</b> writes the image at exact panel resolution. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
     </div>
   </div>

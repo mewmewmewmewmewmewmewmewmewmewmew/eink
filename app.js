@@ -93,6 +93,7 @@ const state = {
   smooth: 1.5,
   zoom: 1,
   facing: 'environment',
+  target: 'photo',     // what drag and pinch act on: 'photo' | 'text'
 };
 
 const DEFAULTS = {
@@ -515,7 +516,7 @@ const SS = 3;          // supersample factor for glyph rasterising
 let textBmp = null;    // {w, h, mask, idx} in panel pixels
 let textDirty = true;
 
-function markTextDirty() { textDirty = true; kick(); }
+function markTextDirty() { textDirty = true; syncTargetUI(); kick(); }
 
 function buildTextBitmap() {
   textDirty = false;
@@ -602,13 +603,35 @@ function drawText(out) {
   }
 }
 
-/* Drags move the caption while the Text drawer is open, and re-frame the crop
-   the rest of the time. Hit-testing the glyphs instead sounds more direct, but
-   a caption sized past about half the panel covers the whole preview and there
-   is nowhere left to grab for panning — this stays predictable at every size,
-   and still falls through to the crop when there is no caption yet. */
+/* What a drag moves is an explicit choice rather than a hit-test on the
+   glyphs: a caption sized past about half the panel covers the whole preview,
+   leaving nowhere to grab for panning. The selector is independent of the
+   drawers, so the caption can be placed against a full-size preview. */
 function textGesture() {
-  return !$('textpanel').hidden && !!text.value.trim();
+  return state.target === 'text' && !!text.value.trim();
+}
+
+function setTarget(v) {
+  state.target = v;
+  document.querySelectorAll('[data-target]').forEach(b => {
+    const on = b.dataset.target === v;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+}
+
+/* Nothing to aim at until there is a caption, so the pill stays out of the
+   way until then — and control returns to the photo if the text is cleared. */
+function syncTargetUI() {
+  const has = !!text.value.trim();
+  $('target-seg').hidden = !has;
+  if (!has && state.target !== 'photo') setTarget('photo');
+}
+
+function hintText() {
+  return textGesture()
+    ? 'Drag to move the caption · pinch to resize it'
+    : 'Drag to reposition · pinch to zoom';
 }
 
 /* --------------------------------------------------------------- pipeline */
@@ -716,8 +739,9 @@ function setTextSize(v) {
 let dragText = false;
 
 function bindGestures() {
-  preview.addEventListener('pointerdown', e => {
-    preview.setPointerCapture(e.pointerId);
+  stage.addEventListener('pointerdown', e => {
+    if (e.target.closest('#target-seg')) return;   // let the pill take its taps
+    try { stage.setPointerCapture(e.pointerId); } catch (_) { /* stale id */ }
     if (ptrs.size === 0) dragText = textGesture();
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size === 2) {
@@ -725,7 +749,7 @@ function bindGestures() {
     }
   });
 
-  preview.addEventListener('pointermove', e => {
+  stage.addEventListener('pointermove', e => {
     const p = ptrs.get(e.pointerId);
     if (!p) return;
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
@@ -753,13 +777,16 @@ function bindGestures() {
     if (ptrs.size < 2) pinch = null;
     if (ptrs.size === 0) dragText = false;
   };
-  preview.addEventListener('pointerup', end);
-  preview.addEventListener('pointercancel', end);
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+
+  bindSeg('target', v => { setTarget(v); $('hint').textContent = hintText(); showHint(); });
 
   /* Desktop convenience. */
-  preview.addEventListener('wheel', e => {
+  stage.addEventListener('wheel', e => {
     e.preventDefault();
-    setZoom(state.zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08));
+    if (textGesture()) setTextSize(text.size * (e.deltaY < 0 ? 1.06 : 1 / 1.06));
+    else setZoom(state.zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08));
     kick();
   }, { passive: false });
 }
@@ -834,6 +861,7 @@ function setMode(m) {
 
 function showHint() {
   const el = $('hint');
+  el.textContent = hintText();
   el.classList.add('show');
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => el.classList.remove('show'), 2600);
@@ -1136,10 +1164,12 @@ function togglePanel(which) {
   txt.hidden = !openTxt;
   $('btn-adjust').setAttribute('aria-expanded', String(openAdv));
   $('btn-text').setAttribute('aria-expanded', String(openTxt));
+  /* Opening the text drawer aims the gestures at the caption; closing it
+     leaves them there, so the caption can be finished against a full preview.
+     Closing the drawer is not a reason to change what you were editing. */
+  if (openTxt) setTarget('text');
   layoutPreview();
-  $('hint').textContent = openTxt
-    ? 'Drag to move the caption · pinch to resize it'
-    : 'Drag to reposition · pinch to zoom';
+  $('hint').textContent = hintText();
   showHint();
 }
 
@@ -1186,6 +1216,7 @@ function wire() {
 
   bindTextControls();
   syncInkSwatches();
+  syncTargetUI();
   $('btn-adjust').addEventListener('click', () => togglePanel('adjust'));
   $('btn-text').addEventListener('click', () => togglePanel('text'));
 
