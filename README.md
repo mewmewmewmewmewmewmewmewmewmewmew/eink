@@ -57,6 +57,27 @@ itself: a portrait 296 × 128 panel is only 128 px wide on screen, which is not
 enough to land two fingers on, so a pinch may start anywhere in the empty space
 beside it.
 
+## Camera permission
+
+A web page cannot ask for a permission that lasts — whether a grant is
+remembered is the browser's decision. What the app does is avoid asking when it
+does not have to:
+
+- the permission state is queried first, and `getUserMedia` is never called when
+  the answer is already *denied* — that just re-raises a prompt to fail again
+- returning to the foreground only resumes a camera that was already granted;
+  it used to call `getUserMedia` every time the app came back, which on iOS is a
+  fresh prompt each time
+- a blocked camera explains where to re-enable it and offers **Try again**
+  rather than needing a reload, and a grant made in browser settings is picked
+  up without one
+
+On iOS, two things make it stick: **add the app to the Home Screen**, which
+gives it its own permission scope, or allow the camera for the site in
+**Settings › Safari › Camera** (or *aA* › Website Settings › Camera). In an
+ordinary Safari tab without that, iOS asks again each session, and no amount of
+page code changes it.
+
 ## Render styles
 
 | Style        | What it does |

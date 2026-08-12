@@ -114,6 +114,7 @@ body[data-mode="review"] .only-live{display:none!important}
   text-align:center;color:var(--muted);font-size:14px;line-height:1.5;
 }
 #status b{color:var(--fg);display:block;margin-bottom:4px}
+.status-btn{margin-top:12px;padding:10px 18px;font-size:14px}
 
 /* ---------- controls ---------- */
 /* The drawer is capped and scrolls internally rather than growing to fit its

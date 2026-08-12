@@ -859,6 +859,39 @@ function rotate(deg) {
 /* ----------------------------------------------------------------- camera */
 let stream = null;
 
+/* Whether the browser remembers a camera grant is the browser's call, not the
+   page's — there is no API to ask for a lasting permission. What the page can
+   do is avoid asking when it does not need to: never call getUserMedia when
+   the answer is already known to be no, and never re-ask silently in the
+   background, because on iOS each call is a fresh prompt. */
+let hadCamera = false;      // a grant has been given at least once this session
+
+async function cameraPermission() {
+  try {
+    if (!navigator.permissions || !navigator.permissions.query) return 'unknown';
+    const st = await navigator.permissions.query({ name: 'camera' });
+    /* Granting it later from browser settings should not need a reload. */
+    if (st && 'onchange' in st) {
+      st.onchange = () => { if (st.state === 'granted' && !stream && mode === 'live') startCamera(); };
+    }
+    return st.state;
+  } catch (_) {
+    return 'unknown';       // Safari has no 'camera' descriptor
+  }
+}
+
+function blockedStatus() {
+  setStatus('Camera blocked', IOS
+    ? 'Turn it back on in Settings \u203a Safari \u203a Camera, or tap aA in the address bar \u203a Website Settings \u203a Camera \u203a Allow. You can still upload a photo.'
+    : 'Camera permission is blocked for this site. Re-enable it in the browser\u2019s site settings, or upload a photo instead.',
+    'Try again', () => startCamera());
+}
+
+async function initCamera() {
+  if (await cameraPermission() === 'denied') { blockedStatus(); return; }
+  startCamera();
+}
+
 async function startCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     setStatus('Camera unavailable',
@@ -866,8 +899,13 @@ async function startCamera() {
     return;
   }
   stopCamera();
+  /* Opening a camera is slow enough that the user can upload a photo or open
+     a project in the meantime. Anything that stops the camera bumps this
+     counter, so a start that is no longer wanted releases its stream instead
+     of dragging the app back to the live view. */
+  const seq = ++camSeq;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const media = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: state.facing },
         width:  { ideal: 1920 },
@@ -875,30 +913,50 @@ async function startCamera() {
       },
       audio: false,
     });
+    if (seq !== camSeq) { media.getTracks().forEach(t => t.stop()); return; }
+    stream = media;
+    hadCamera = true;
     video.srcObject = stream;
     await video.play().catch(() => {});
+    /* play() is a second suspension point, and an upload landing in it would
+       otherwise be overwritten by the line below. */
+    if (seq !== camSeq) { media.getTracks().forEach(t => t.stop()); stream = null; return; }
     lastSource = { el: video, w: video.videoWidth, h: video.videoHeight };
     view.mirror = state.facing === 'user';
     syncFlip();
     setMode('live');
     clearStatus();
   } catch (err) {
-    setStatus('No camera', err && err.name === 'NotAllowedError'
-      ? 'Camera permission was denied. Allow it in your browser settings, or upload a photo instead.'
-      : 'Could not open the camera. You can still upload a photo.');
+    if (seq !== camSeq) return;          // superseded; not this failure's problem
+    if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+      blockedStatus();
+    } else {
+      setStatus('No camera', 'Could not open the camera. You can still upload a photo.',
+                'Try again', () => startCamera());
+    }
   }
 }
 
+let camSeq = 0;
+
 function stopCamera() {
+  camSeq++;                               // invalidates any start still in flight
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
 }
 
-function setStatus(title, body) {
+function setStatus(title, body, actionLabel, onAction) {
   statusEl.hidden = false;
   statusEl.innerHTML = '';
   const b = document.createElement('b');
   b.textContent = title;
   statusEl.append(b, document.createTextNode(body || ''));
+  if (actionLabel) {
+    const btn = document.createElement('button');
+    btn.className = 'btn status-btn';
+    btn.textContent = actionLabel;
+    btn.addEventListener('click', onAction);
+    statusEl.append(btn);
+  }
 }
 function clearStatus() { statusEl.hidden = true; }
 
@@ -1783,7 +1841,10 @@ function wire() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopCamera();
-    else if (!stream && mode === 'live') startCamera();
+    /* Only resume a camera that was already granted. Calling getUserMedia
+       here on a browser that has not been asked yet raises a prompt every
+       time the app comes back to the foreground. */
+    else if (!stream && mode === 'live' && hadCamera) startCamera();
   });
 
   if (window.ResizeObserver) {
@@ -1798,7 +1859,7 @@ function wire() {
 applySize();
 wire();
 syncFlip();
-startCamera();
+initCamera();
 requestAnimationFrame(loop);
 
 /* isSecureContext, not a protocol check: localhost is a secure context too,
