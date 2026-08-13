@@ -311,7 +311,7 @@ quantisation, which is the only place they can meaningfully change the result �
 with four colours available, tone mapping is most of the work. `Dither` sets
 error-diffusion strength, and `Outline` and `Smooth` drive the edge-based styles.
 
-## Zoom, background and transparency
+## Zoom, rotation, background and transparency
 
 `Zoom` runs **0.2× to 6×**. Above 1 the photo is larger than the panel and the
 slider chooses how far into it to crop. Below 1 the photo is *smaller* than the
@@ -330,6 +330,16 @@ to an overhang offset rather than dropped, so a long drag runs smoothly from one
 into the other instead of sticking at the limit. A fifth of the photo always
 stays on the panel — far enough to be a deliberate composition, not far enough
 to lose the picture off the side and wonder where it went.
+
+**Rotate** tilts the photo −45° to +45°, on top of the ↺ ↻ quarter turns — the
+two compose, so any angle is reachable. Only the quarter turns swap the panel's
+width and height for the aspect fit, which is why they stay a separate control.
+
+Tilting exposes background at the corners, which is often the point. When it is
+not, zoom in: the ceiling on the drawn size is the panel measured *in the
+photo's own axes* rather than the panel itself, so a tilted photo is allowed to
+be larger than the frame and can cover it again. At no tilt those are the same
+number, so nothing about the untilted case changes.
 
 **Background** picks which of the four inks fills everything the photo does not
 cover. It is restricted by the ink palette in the same way captions are, so a
@@ -387,7 +397,10 @@ quietly offline with no hint why — and says which of the two things went wrong
 *That password was not accepted* or *Could not reach the server*.
 
 A badge shows where projects live: *Online*, *Password needed*, *Server
-unreachable*, or *This device*. *Password needed* is deliberately distinct from
+unreachable*, or *This device*. The field's visibility is derived from that
+state on every render rather than left wherever it was last put, so it appears
+when a password is actually needed and is not still sitting there afterwards.
+The **Password** link opens it on demand to change one. *Password needed* is deliberately distinct from
 *Server unreachable*: one is fixed by typing, the other by waiting.
 
 There is no manual device-only switch. If the server cannot be reached the app

@@ -148,6 +148,7 @@ const state = {
   detail: 5,
   weight: 1,
   zoom: 1,
+  angle: 0,            // free rotation of the photo, on top of the quarter turns
   bg: 1,               // palette index behind the photo: white
   exportRot: 'cw',     // which way a portrait composition turns for export
   facing: 'environment',
@@ -157,7 +158,7 @@ const state = {
 const DEFAULTS = {
   dither: 'fs', exposure: 0, brightness: 0, contrast: 15,
   saturation: 1.6, gamma: 1, ditherAmt: 0.9, edge: 0.5, smooth: 1.5, detail: 5, weight: 1, zoom: 1,
-  bg: 1,
+  angle: 0, bg: 1,
 };
 
 /* Crop / rotate. panX and panY are -1..1 across whatever slack the crop
@@ -263,8 +264,17 @@ function cropGeom(sw, sh) {
      is cropped, exactly as before. Writing it this way keeps the two regimes
      continuous, so nothing jumps as the slider crosses 1. */
   const scale = state.zoom * tw / cw0;
-  const dw = Math.min(tw, sw * scale);
-  const dh = Math.min(th, sh * scale);
+
+  /* A tilted photo needs to be bigger than the panel to cover it, so the
+     ceiling on the drawn size is the panel measured in the photo's own axes
+     rather than the panel itself. At no tilt these are the same number, which
+     is what keeps the untilted case exactly as it was. */
+  const arad = state.angle * Math.PI / 180;
+  const ca = Math.abs(Math.cos(arad)), sa = Math.abs(Math.sin(arad));
+  const needW = tw * ca + th * sa, needH = tw * sa + th * ca;
+
+  const dw = Math.min(needW, sw * scale);
+  const dh = Math.min(needH, sh * scale);
   const cw = dw / scale, ch = dh / scale;
 
   const slackX = (sw - cw) / 2, slackY = (sh - ch) / 2;
@@ -273,7 +283,9 @@ function cropGeom(sw, sh) {
      shows; below it the photo has room to move instead, so the same gesture
      slides it around the margin. Exactly one of the two is ever non-zero on a
      given axis, so both can be driven by the same panX/panY. */
-  const marginX = (tw - dw) / 2, marginY = (th - dh) / 2;
+  /* Tilted and zoomed in, the drawn photo is wider than the panel, so there is
+     no margin to slide around in — and a negative one would invert the drag. */
+  const marginX = Math.max(0, (tw - dw) / 2), marginY = Math.max(0, (th - dh) / 2);
 
   /* Once pan runs out, offX/offY carry the photo on past the edge so it can
      hang off. They are panel pixels rather than a fraction, because there is
@@ -322,7 +334,11 @@ function grabFrame(src, sw, sh) {
   wctx.save();
   wctx.translate(W / 2, H / 2);
   if (view.mirror) wctx.scale(-1, 1);
-  if (view.rot) wctx.rotate(view.rot * Math.PI / 180);
+  /* The quarter turns and the free angle are the same rotation; only the
+     quarter turns swap the panel's width and height for the aspect fit, which
+     is why they stay a separate number. */
+  const turn = totalTurn();
+  if (turn) wctx.rotate(turn * Math.PI / 180);
   wctx.drawImage(el, sx, sy, sW, sH, -g.dw / 2 + g.dx, -g.dh / 2 + g.dy, g.dw, g.dh);
   wctx.restore();
 
@@ -1143,13 +1159,12 @@ function panBy(dx, dy) {
   let ox = dx / dispScale, oy = dy / dispScale;
   if (view.mirror) ox = -ox;
 
-  let du, dv;
-  switch (view.rot) {
-    case 90:  du =  oy; dv = -ox; break;
-    case 180: du = -ox; dv = -oy; break;
-    case 270: du = -oy; dv =  ox; break;
-    default:  du =  ox; dv =  oy;
-  }
+  /* Undo the rotation that sits between the screen and the crop, so a drag
+     moves the photo the way the finger went rather than off at the tilt. */
+  const rad = -totalTurn() * Math.PI / 180;
+  const cs = Math.cos(rad), sn = Math.sin(rad);
+  const du = ox * cs - oy * sn;
+  const dv = ox * sn + oy * cs;
 
   const perPx = g.cw / g.tw;     // source pixels per output pixel
   view.panX = slide('panX', 'offX', du, g.slackX, g.marginX, perPx, g.maxCX, g.marginX);
@@ -1258,9 +1273,18 @@ function resetCrop() {
   view.rot = 0; view.panX = 0; view.panY = 0; view.offX = 0; view.offY = 0;
   view.mirror = false;
   setZoom(1);
+  setAngle(0);
   syncFlip();
   kick();
 }
+
+function setAngle(deg) {
+  state.angle = deg;
+  $('s-angle').value = deg;
+  $('o-angle').textContent = (deg > 0 ? '+' : '') + deg + '\u00b0';
+}
+
+function totalTurn() { return view.rot + state.angle; }
 
 function rotate(deg) {
   view.rot = (view.rot + deg + 360) % 360;
@@ -2023,9 +2047,15 @@ async function renderProjects() {
   badge.textContent = label;
   badge.className = 'store-badge ' + (!remote ? 'is-local' : remoteFailed ? 'is-down' : 'is-online');
 
-  /* Nothing works until the password is in, so open the form rather than
-     leaving it behind a Settings tap nobody knows to make. */
-  if (needsAuth && !remote.token) { $('store-form').hidden = false; fillStoreForm(); }
+  /* Visibility is derived here rather than left as whatever it last was.
+     The form opens by itself when nothing will work until a password is in,
+     stays open while the user is deliberately editing one, and is otherwise
+     closed — including straight after connecting, which is when leaving a
+     password box on screen is most confusing. */
+  const wantForm = needsAuth || pwOpen;
+  $('store-form').hidden = !wantForm;
+  if (wantForm) fillStoreForm();
+  if (!wantForm) $('store-msg').textContent = '';
   $('store-detail').textContent = detail;
 
   if (!list.length) {
@@ -2093,11 +2123,15 @@ async function tryPassword(token) {
   }
 }
 
+/* Whether the user asked to see the password field, as opposed to it being
+   put there because nothing would work without one. */
+let pwOpen = false;
+
 function bindStorage() {
   $('btn-store-setup').addEventListener('click', () => {
-    const f = $('store-form');
-    f.hidden = !f.hidden;
-    if (!f.hidden) fillStoreForm();
+    pwOpen = $('store-form').hidden;
+    $('store-form').hidden = !pwOpen;
+    if (pwOpen) fillStoreForm(); else $('store-msg').textContent = '';
   });
 
   /* Connect checks before it saves: storing a password that does not work
@@ -2121,6 +2155,7 @@ function bindStorage() {
       return;
     }
     storePassword(token);
+    pwOpen = false;
     $('store-form').hidden = true;
     $('store-msg').textContent = '';
     toast('Projects are online');
@@ -2259,6 +2294,7 @@ const SLIDERS = [
   ['s-detail',     'detail',     v => v.toFixed(1)],
   ['s-weight',     'weight',     v => v.toFixed(0) + ' px'],
   ['s-zoom',       'zoom',       v => v.toFixed(1) + '×'],
+  ['s-angle',      'angle',      v => (v > 0 ? '+' : '') + v.toFixed(0) + '\u00b0'],
 ];
 
 /* Sliders that only matter for some styles are hidden for the rest, and the
@@ -2627,7 +2663,10 @@ function wire() {
   });
 
   $('btn-projects').addEventListener('click', () => { renderProjects(); $('projects').hidden = false; });
-  $('btn-projects-close').addEventListener('click', () => { $('projects').hidden = true; });
+  $('btn-projects-close').addEventListener('click', () => {
+    $('projects').hidden = true;
+    pwOpen = false;               // reopening starts closed, not mid-edit
+  });
   $('btn-save-project').addEventListener('click', saveProject);
   bindStorage();
 
