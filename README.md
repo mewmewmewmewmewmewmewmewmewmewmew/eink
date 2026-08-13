@@ -395,6 +395,12 @@ quantisation. That last part matters: a flat area that tone mapping has nudged
 half a level off the palette dithers into speckle, which is the one artefact this
 app exists to avoid.
 
+The fill goes through the same `emit()` as everything else that puts ink down.
+That matters because the preview is built from an RGBA buffer while the indexed
+PNG is built from a parallel array of palette indices: writing one without the
+other is invisible on screen and wrong in the file. It was, once — a background
+that was flat white in the app came out as a dither of it in the export.
+
 Transparency also survives a project save. Projects normally fall back to JPEG
 for large backgrounds, and JPEG has no alpha channel — so an image that has any
 is kept as PNG however big it turns out.

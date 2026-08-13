@@ -417,13 +417,14 @@ function paintBackground(frame) {
   }
 }
 
+/* Through emit(), not by writing the pixels directly: emit is also what keeps
+   indices[] in step, and the indexed PNG export is built from indices rather
+   than from these pixels. Setting one without the other put a flat background
+   on screen and left the quantiser's dither of it in the exported file. */
 function restoreBackground(out) {
   if (!hasBg) return;
-  const bg = PALETTE[state.bg], n = W * H;
-  for (let p = 0, i = 0; p < n; p++, i += 4) {
-    if (!bgMask[p]) continue;
-    out[i] = bg[0]; out[i + 1] = bg[1]; out[i + 2] = bg[2]; out[i + 3] = 255;
-  }
+  const n = W * H;
+  for (let p = 0; p < n; p++) if (bgMask[p]) emit(out, p, state.bg);
 }
 
 /* ------------------------------------------------------------ adjustment */
