@@ -261,7 +261,16 @@ function allocate() {
 }
 
 /* ------------------------------------------------------------ tone curve */
-let LUT = new Uint8ClampedArray(256);
+/* Float, not Uint8Clamped. A contrast boost pushes highlights past 255, and
+   clamping them there flattens a pale colour to neutral white before anything
+   downstream can see its hue: a near-white pink came out of the tone stage as
+   256,251,256 — a red-green difference of 5 where the real one is 22 — so it
+   read as grey and turned up as black lines. Turning the saturation up did
+   nothing, because saturation runs after this and there was no longer any
+   colour left in the highlight to amplify. Everything that reads buf either
+   measures differences or quantises, so values above 255 are harmless there,
+   and posterize clamps on its own account. */
+let LUT = new Float32Array(256);
 
 function buildLUT() {
   const ev = Math.pow(2, state.exposure);
@@ -740,6 +749,10 @@ const HATCH = [[0.7071, 0.7071], [0.7071, -0.7071], [1, 0], [0, 1]];
 /* How light each ink is. Etch works out how much of an area to cover by
    comparing the colour's brightness with its ink's, so it needs these. */
 const INK_LUMA = MATCH_PALETTE.map(c => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]);
+/* The hue score at which a colour claims the whole line. Around half of the
+   distance from grey to a pure primary, so ordinary photographic colour uses
+   a good part of the range rather than sitting at the bottom of it. */
+const CHROMA_FULL = 120;
 
 /* The ink a colour belongs to by hue alone, with brightness ignored.
 
@@ -756,7 +769,13 @@ function hueInk(r, g, b) {
   const hasY = inks.indexOf(2) >= 0, hasR = inks.indexOf(3) >= 0;
   const dark = inks.indexOf(0) >= 0 ? 0 : inks[0];
   const yellowness = Math.min(r, g) - b;
-  const redness = r - Math.max(g, b);
+  /* Measured against green alone, not against whichever of green and blue is
+     larger. Pink is red with white mixed in, and white brings blue with it —
+     so a cool pink scores 9 against max(g, b) and reads as neutral, while the
+     same pink scores 31 against green. Blue is not one of the four inks and
+     has no business competing for the pixel: among black, red and yellow, a
+     pink belongs to red however much blue is sitting in it. */
+  const redness = r - g;
   if (yellowness < 12 && redness < 12) return dark;
   if (hasY && hasR) return yellowness > redness ? 2 : 3;
   if (hasY && yellowness >= 12) return 2;
@@ -792,6 +811,7 @@ function etchRender() {
      stripes, so the ordered matrix jitters the width and breaks it into a
      dashed trace instead — that is the dither doing the lightening. */
   const line = (x, y, dir, cov) => {
+    if (cov <= 0) return false;
     const u = (x * HATCH[dir][0] + y * HATCH[dir][1]) / period;
     const f = u - Math.floor(u);
     const width = Math.min(0.95, cov * 1.15) + bayerAt(x, y) * jitter * cov;
@@ -801,38 +821,40 @@ function etchRender() {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const p = y * W + x, j = p * 3;
-      const ink = hueInk(buf[j], buf[j + 1], buf[j + 2]);
+      const r = buf[j], g = buf[j + 1], b = buf[j + 2];
+      const ink = hueInk(r, g, b);
       const lum = luma[p];
-      const inkLum = INK_LUMA[ink];
 
-      if (lum >= inkLum) {
-        /* Lighter than its own ink, so the ink covers part of the paper and
-           what shows through is what makes it pale.
+      /* Two separate things, on two separate line directions.
 
-           Line weight multiplies that. The honest coverage for a very pale
-           colour is a few per cent, which is accurate and almost invisible —
-           a pale pink comes back as white paper with a hint of red in it.
-           Weight trades that accuracy for presence, so the colour can be
-           made to read as a light red rather than as nothing. Darkening the
-           image instead would work on the background too, and turn the paper
-           into black lines. */
-        const room = 255 - inkLum;
-        let cov = room > 1 ? (255 - lum) / room : 1;
-        /* Only the coloured inks. Black already spans the whole range from
-           paper to solid, so its honest coverage is the right amount and
-           multiplying it just floods the neutrals. Red and yellow can never
-           be darker than themselves, which is what leaves a pale tint of
-           them too faint to see. */
-        if (ink !== black) { cov *= state.weight; if (cov > 1) cov = 1; }
-        emit(out, p, line(x, y, 0, cov) ? ink : paper);
+         How much COLOUR to lay down comes from how colourful the pixel is,
+         not from how dark it is. Driving it from darkness is what made a
+         near-white pink hopeless: it is barely darker than paper, so the
+         honest coverage was one per cent and no amount of weight could rescue
+         it. Its hue, though, is perfectly measurable — that is what decides
+         how much red goes down.
+
+         How much BLACK to lay down then covers whatever darkness the colour
+         did not account for, crossing the other way. Neutrals have no colour
+         pass at all and fall through to black alone, which is what Engrave
+         does and why greys still read as tone. */
+      let cov = 0;
+      if (ink !== black) {
+        const score = ink === 2 ? Math.min(r, g) - b : r - g;
+        cov = score / CHROMA_FULL * state.weight;
+        cov = cov < 0 ? 0 : cov > 1 ? 1 : cov;
+        if (line(x, y, 0, cov)) { emit(out, p, ink); }
+        else { emit(out, p, paper); }
       } else {
-        /* Darker than its own ink can go. The ink covers everything and black
-           takes the rest, crossing the other way — which is what keeps a
-           yellow area from flattening into a solid block. */
-        emit(out, p, ink);
-        if (black >= 0 && inkLum > 1 && line(x, y, 1, (inkLum - lum) / inkLum)) {
-          emit(out, p, black);
-        }
+        emit(out, p, paper);
+      }
+
+      /* What the colour pass left the area averaging at, and how much black is
+         needed to bring it down to the pixel's actual brightness. */
+      if (black >= 0) {
+        const base = 255 - cov * (255 - INK_LUMA[ink === black ? black : ink]);
+        const covK = base > 1 ? (base - lum) / base : 0;
+        if (line(x, y, 1, covK)) emit(out, p, black);
       }
     }
   }

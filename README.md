@@ -151,34 +151,51 @@ lands on yellow, more than twice as far from red as from yellow. Right answer,
 wrong question.
 
 Etch picks the ink by **hue alone** and spends the brightness on **coverage**
-instead. To average out at the colour's brightness, an ink has to cover
+instead. Hue is measured against green rather than against whichever of green
+and blue is larger: pink is red with white mixed in, and white brings blue with
+it, so a cool pink scores 9 against `max(g, b)` and reads as neutral while the
+same pink scores 31 against green. Blue is not one of the four inks and has no
+business competing for the pixel.
+
+How much colour goes down comes from how **colourful** the pixel is, not how
+dark. Driving it from darkness makes a near-white pink hopeless — it is barely
+darker than paper, so the honest coverage is one per cent and no amount of
+weight rescues it — while its hue is perfectly measurable. Black then covers
+whatever darkness the colour did not account for, crossing the other way, so
+neutrals fall through to black alone and still read as tone. To average out at the colour's brightness, an ink has to cover
 `(255 − colour) ÷ (255 − ink)` of the area — pale pink against red is 14/179,
 eight per cent — so it comes out as a fine red trace, and the paper showing
 through is what makes it read pale. Below about a pixel a line stops being
 drawable, so the ordered matrix jitters the width and breaks it into a dashed
 trace rather than letting it alias into stripes.
 
-**Line weight** becomes **Ink weight** here, and multiplies that coverage. The
-honest amount for a very pale colour is a few per cent, which is accurate and
-almost invisible — a pale pink comes back as white paper with a hint of red in
-it, and no amount of tweaking exposure or contrast fixes it, because darkening
-the image blackens the paper too. Weight trades accuracy for presence: at ×3 a
-pale pink covers 30% and reads as a light red. It applies only to the coloured
-inks, since black already spans paper to solid and multiplying it just floods
-the neutrals — the greys hold at 46% whatever the weight.
-
-A colour darker than its own ink cannot be reached by covering paper, so there
-the ink goes solid and **black hatches across it** the other way — which is
-what stops a dark gold flattening into a block. Anything without a warm cast —
+**Line weight** becomes **Ink weight** here, and multiplies that coverage for
+the colours only — black already spans paper to solid, so multiplying it just
+floods the neutrals, and the greys hold at 46% whatever the weight. Anything without a warm cast —
 greys, greens, blues — has no ink to be, so it goes to black and reads as tone,
 exactly as Engrave does.
 
 | | Engrave | Etch |
 |---|---|---|
-| pale pink | yellow, 20% covered | **red**, 10% |
-| blush | yellow, 19% | **red**, 28% |
+| pale pink | yellow, 6% covered | **red**, 47% |
+| cool pink | yellow, 4% | **red**, 29% |
+| near-white pink | nothing at all | **red**, 21% |
 | grey | yellow, 46% | **black**, 46% |
 | blue | yellow, 47% | **black**, 47% |
+
+## The tone curve is not 8-bit
+
+`LUT` is a `Float32Array` rather than a `Uint8ClampedArray`, and that is not an
+optimisation. A contrast boost pushes highlights past 255, and clamping them
+there flattens a pale colour to neutral white before anything downstream can
+see its hue. A near-white pink came out of the tone stage as `256, 251, 256` —
+a red-green difference of 5 where the real one is 22 — so it read as grey and
+turned up as black lines. Turning the saturation up did nothing about it,
+because saturation runs *after* the curve and there was no colour left in the
+highlight to amplify.
+
+Everything reading the buffer either measures differences or quantises, so
+values above 255 are harmless there, and `posterize` clamps on its own account.
 
 Those five share one **Detail** slider, relabelled to whatever it means for the
 style: *Misregister*, *Line gap*, *Spacing* — or, for **Halftone**, *Dot size*,
