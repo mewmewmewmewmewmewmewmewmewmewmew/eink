@@ -67,6 +67,18 @@ stays editable afterwards — crop, rotation and every filter re-run from the
 original pixels rather than from an already-reduced image. The upload button
 (bottom left) puts any photo from your library through exactly the same path.
 
+A photo off the camera roll **starts clean**: default style, default
+adjustments, no captions. The settings are one global set rather than one per
+image, so without this whatever was last on screen — very often a project just
+reopened — came along and quietly reskinned the new picture. Carrying a look
+forward is a saved project's job, and it can do it because it stored one. The
+panel size and orientation are the exception: they describe the hardware on the
+wall, not the photograph, so they stay where you put them.
+
+The shutter is deliberately not covered by that. The live view is already
+showing the style being framed, and resetting at the moment of capture would
+change the photo out from under whoever just composed it.
+
 Once a shot is taken or uploaded:
 
 - **drag** to reposition the crop

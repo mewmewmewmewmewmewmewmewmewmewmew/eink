@@ -1563,13 +1563,49 @@ function backToCamera() {
 function useUpload(img) {
   stopCamera();
   setOpenProject(null);
-  view.rot = 0; view.panX = 0; view.panY = 0; view.offX = 0; view.offY = 0;
-  view.mirror = false;
-  setZoom(1);
-  syncFlip();
+  startFresh();
   lastSource = { el: img, w: img.naturalWidth, h: img.naturalHeight };
   clearStatus();
   setMode('review');
+}
+
+/* A photo off the camera roll arrives with nothing attached to it, so it opens
+   the way the app opens: default style, default adjustments, no captions.
+
+   The settings are one global set rather than a per-image one, which meant
+   whatever was last on screen — very often a project just reopened — came
+   along and quietly reskinned the new picture. Carrying a look forward is
+   something a saved project does, and it does it because it stored one.
+
+   Not applied to the shutter: the live view is already showing the style being
+   framed, and resetting at the moment of capture would change the photo out
+   from under the person who just composed it. */
+function startFresh() {
+  view.rot = 0; view.panX = 0; view.panY = 0; view.offX = 0; view.offY = 0;
+  view.mirror = false;
+  syncFlip();
+
+  state.style = 'photo';
+  state.palette = 'full';
+  Object.assign(state, DEFAULTS);
+  setZoom(state.zoom);
+
+  texts.length = 0;
+  texts.push(newLayer(0));
+  active = 0;
+
+  ['style', 'dither', 'palette'].forEach(k => setSeg(k, state[k]));
+  SLIDERS.forEach(([id, key, fmt]) => {
+    $(id).value = state[key];
+    $(id.replace('s-', 'o-')).textContent = fmt(state[key]);
+  });
+  applyPalette();
+  syncBgSwatches();
+  buildLUT();
+  syncStyleUI();
+  syncTextControls();
+  renderLayerTabs();
+  renderTargetPill();
 }
 
 /* ----------------------------------------------------------------- export */
