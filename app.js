@@ -809,14 +809,18 @@ function hueInk(r, g, b) {
    matching the pixel's brightness means d = (255 - lum) / (w * (255 - I)).
    Where that would exceed 1 the ink cannot go dark enough on its own, and
    black takes over the remainder of the band. */
-const LITHO_WIDTH = [0.35, 0.55, 0.75, 0.92];   // by Line weight, 1..4
+const LITHO_WIDTH = [0.45, 0.62, 0.78, 0.92];   // by Line width, 1..4
 
 function lithoRender() {
   const out = imgData.data;
   boxBlur(Math.round(state.smooth), 1);
   computeLuma();
 
-  const period = Math.max(2.5, state.detail);
+  /* Wider ruling than Engrave's for the same Line gap setting. The tone here
+     is a texture inside the band, and a band two pixels across has nowhere to
+     put one — it just reads as a thin line again, which is the style it is
+     meant to differ from. */
+  const period = Math.max(3, state.detail * 1.25);
   const paper = paperInk();
   const paperLum = INK_LUMA[paper];
   const black = inks.indexOf(0) >= 0 ? 0 : -1;
@@ -850,11 +854,18 @@ function lithoRender() {
         dBlack = black >= 0 ? 1 - dInk : 0;
       } else {
         /* A colour can be lighter than the paper in tone and still be plainly
-           coloured — a pale pink is the obvious case. Let its chroma claim the
-           band the way Etch does, so it reads as pink rather than as nothing. */
+           coloured — a pale pink is the obvious case. Let its chroma claim
+           part of the band, so it reads as pink rather than as nothing.
+
+           The curve saturates and never reaches 1: chroma alone must not fill
+           the band, or every coloured area goes solid and the dither — the
+           only thing separating this style from Etch — disappears out of the
+           picture. Filling solid is left to tone, which is what actually
+           means dark. */
         const score = ink === 2 ? Math.min(cr, cg) - cb : ink === 3 ? cr - cg : 0;
-        const chroma = score / CHROMA_FULL;
-        if (chroma > dInk) dInk = chroma > 1 ? 1 : chroma;
+        const s = score > 0 ? score / CHROMA_FULL : 0;
+        const chroma = s / (s + 1);
+        if (chroma > dInk) dInk = chroma;
         if (dInk < 0) dInk = 0;
       }
 
@@ -865,7 +876,7 @@ function lithoRender() {
          are a fixed slice of the range and the palest tones would round away
          to nothing. */
       const t = bayerAt(Math.round(x * HATCH[0][0] - y * HATCH[0][1]),
-                        Math.round(u * period)) + 0.5;      emit(out, p, t < dInk ? ink : t < dInk + dBlack ? black : paper);
+                        Math.floor(u)) + 0.5;      emit(out, p, t < dInk ? ink : t < dInk + dBlack ? black : paper);
     }
   }
 }
