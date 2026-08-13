@@ -1548,6 +1548,7 @@ function capture() {
   const { el, w, h } = lastSource;
   if (!w || !h) return;
 
+  setOpenProject(null);
   still.width = w; still.height = h;
   stillCtx.drawImage(el, 0, 0, w, h);
   lastSource = { el: still, w, h };
@@ -1561,6 +1562,7 @@ function backToCamera() {
 
 function useUpload(img) {
   stopCamera();
+  setOpenProject(null);
   view.rot = 0; view.panX = 0; view.panY = 0; view.offX = 0; view.offY = 0;
   view.mirror = false;
   setZoom(1);
@@ -1966,13 +1968,28 @@ async function pushRemote(rec) {
   await api('/projects/' + rec.id, { method: 'PUT', body: fd });
 }
 
-async function saveProject() {
+/* Which stored project the work on screen came from, so Save can put it back
+   where it came from instead of leaving a second copy behind. Cleared whenever
+   the background changes, because at that point it is a different picture. */
+let openId = null;
+
+function setOpenProject(id) {
+  openId = id;
+  const btn = $('btn-save-project');
+  if (btn) btn.disabled = !id;
+}
+
+async function saveProject(asNew) {
   if (mode !== 'review' || !lastSource) return;
+  if (!asNew && !openId) return;              // nothing to save over
   const blob = await sourceBlob();
   if (!blob) { toast('Could not save this image'); return; }
 
+  /* Overwriting keeps the id, so the project stays where it was in the list
+     rather than jumping to the top as if it were new. */
+  const id = asNew ? String(Date.now()) : openId;
   const rec = {
-    id: String(Date.now()),
+    id,
     w: W, h: H,
     thumb: preview.toDataURL('image/png'),
     state: Object.assign({}, state),
@@ -1985,7 +2002,8 @@ async function saveProject() {
   if (remote) {
     try {
       await pushRemote(rec);
-      toast('Saved online');
+      setOpenProject(id);
+      toast(asNew ? 'Saved online' : 'Project updated');
       closeSheet();
       return;
     } catch (_) {
@@ -1999,6 +2017,7 @@ async function saveProject() {
     const all = await localList();
     all.sort((a, b) => Number(b.id) - Number(a.id));
     for (const old of all.slice(PROJ_MAX)) await localDelete(old.id);
+    setOpenProject(id);
     toast(remote ? 'Server unreachable — saved on device' : 'Saved on this device');
   } catch (_) {
     toast('Could not save — storage unavailable');
@@ -2024,6 +2043,7 @@ async function flushPending() {
 /* Push a restored project back through every control, so the drawers agree
    with what is on screen. */
 function applyProjectState(rec) {
+  setOpenProject(rec.id);
   Object.assign(state, rec.state);
   Object.assign(view, { offX: 0, offY: 0 }, rec.view);
 
@@ -2773,7 +2793,8 @@ function wire() {
     $('projects').hidden = true;
     pwOpen = false;               // reopening starts closed, not mid-edit
   });
-  $('btn-save-project').addEventListener('click', saveProject);
+  $('btn-save-project').addEventListener('click', () => saveProject(false));
+  $('btn-save-new').addEventListener('click', () => saveProject(true));
   bindStorage();
 
   bindChecker();

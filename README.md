@@ -407,9 +407,20 @@ is kept as PNG however big it turns out.
 
 ## Saving
 
-- **Save project** — stores the shot as an **editable** state: the
-  full-resolution background, the crop and rotation, every adjustment and all
-  the captions. Reopen it from the folder button and carry on editing.
+- **Save** / **Save new** — two columns, because editing a project you opened
+  and starting a new one from it are different intentions. Both store the shot
+  as an **editable** state: the full-resolution background, the crop and
+  rotation, every adjustment and all the captions.
+
+  *Save* puts the work back over the project it came from, keeping its id — so
+  it stays where it was in the list rather than jumping to the top as if it
+  were new. It is disabled until there is something to save over: on a fresh
+  photo, and again whenever the background changes, since at that point it is a
+  different picture and overwriting an unrelated project would be a surprise.
+
+  *Save new* always makes another one, and the app then follows the copy — a
+  second *Save* updates what you just branched to, not what you branched away
+  from.
 - **Save to Photos** — opens the system share sheet. On iPhone this is the only
   route from a web page into the photo album: choose *Save Image* and it lands in
   Photos rather than in Files. Shown wherever the browser can share files (as

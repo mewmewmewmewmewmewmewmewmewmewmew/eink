@@ -408,6 +408,12 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radiu
   -webkit-user-select:text;user-select:text;
 }
 .store-field input:focus{outline:none;border-color:var(--accent)}
+/* Save over the open project, or keep it and save another. Equal columns so
+   neither reads as the safer one by being larger. */
+.save-row{display:flex;gap:7px}
+.save-row .btn{flex:1 1 0;min-width:0}
+.save-row .btn[disabled]{opacity:.45}
+
 .store-actions{display:flex;gap:7px;flex-wrap:wrap}
 .store-actions .btn{flex:1;padding:10px 12px;font-size:13.5px;white-space:nowrap}
 
