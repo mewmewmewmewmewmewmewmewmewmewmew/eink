@@ -203,44 +203,39 @@ dark — and that is the honest answer. The slider reads **Line width**, and its
 percentages are the band, not the ink.
 
 Colour follows Etch: the ink is chosen by hue, and where the colour is lighter
-than the paper in tone but still plainly coloured, its **chroma** claims part of
-the band instead. That case is not hypothetical — the tone curve legitimately
-lifts a near-white pink to luma 256, one step *above* white paper, so the tint
+than the paper in tone but still plainly coloured, its **chroma** claims the
+band instead. That case is not hypothetical — the tone curve legitimately lifts
+a near-white pink to luma 256, one step *above* white paper, so the tint
 fraction is zero or negative and the swatch would vanish. Below the ink's own
 brightness the shortfall goes to black in a second dither level, exactly as in
 Etch, so a dark gold is yellow and black in the same band.
 
-That chroma curve **saturates and never reaches 1**, which matters more than it
-sounds. Letting chroma fill the band outright made every coloured area solid,
-the dither vanished from exactly the parts of the picture people look at, and
-the style became Etch with extra steps — a strong pink and a pure red both came
-out as the same unbroken stroke. Filling solid is left to *tone*, which is what
-actually means dark: a pure red reaches a tint fraction of 1 on its own and does
-go solid, while a bright pink stays part paper, which is what makes it read
-bright.
-
-The tone dither runs **along the line** rather than across it, so the band
-breaks into dashes of its full width instead of tapering. Two things fall out of
-that. A band only ever covers a couple of columns of an upright dither matrix,
+The ordered matrix is indexed **along and across the line**, not along the
+screen axes. A band only ever covers a couple of columns of an upright matrix,
 so the thresholds available inside it are a fixed slice of the range and the
-palest tones round away to nothing however small the fill gets — indexing along
-the stroke gives the whole range. And a dashed fat stroke is unmistakably not
-Engrave's smooth taper, which is the whole point of adding a style. For the same
-reason the ruling is 1.25× wider than Engrave's at the same **Line gap**: a band
-two pixels across has nowhere to put a texture and just reads as a thin line
-again.
+palest tones round away to nothing however small the fill gets.
 
 | | Engrave | Etch | Litho |
 |---|---|---|---|
-| pale pink | yellow, 6% | **red**, 47% | **red**, 13% |
-| near-white pink | nothing | **red**, 21% | **red**, 7% |
-| strong pink | — | **red**, 92% | **red**, 30% |
-| grey | yellow, 46% | **black**, 46% | **black**, 18% |
+| pale pink | yellow, 6% | **red**, 47% | **red**, 14% |
+| near-white pink | nothing | **red**, 21% | **red**, 6% |
+| strong pink | — | **red**, 92% | **red**, 35% (a full band) |
+| grey | yellow, 46% | **black**, 46% | **black**, 14% |
 
-Litho lays down less ink than Etch at the same setting — the whole picture is
-lighter, because the paper between the dashes is doing the work the taper used
-to do. **Line width** is the density control: on the same photo it moves the
-paper from 71% down to 40%, at which point it is as dark as Etch.
+Litho and Etch read alike at a glance, and that is a property of the pair
+rather than a bug: both rule the same 45° screen in the same hue-picked ink,
+and once a colour is saturated enough to claim a whole band, a full band and a
+full-coverage Etch line are the same solid stroke. The measured difference is
+large — the same photo leaves 76% of the paper white through Litho and 34%
+through Etch, and 54% of pixels differ — and **Line width** is what separates
+them: Litho is the lighter, airier one until you turn it up.
+
+An attempt to force the two further apart — a saturating chroma curve so colour
+could never fill a band on its own, the tone dithered along the line into
+dashes, and a wider ruling — was reverted. It did what it said, and the dashed
+ruling was a worse picture. The version here is the one kept on the strength of
+how it looks, and the suite asserts the difference is real rather than assuming
+it.
 
 ## The tone curve is not 8-bit
 
