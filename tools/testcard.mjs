@@ -10,7 +10,9 @@ import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import fs from 'node:fs';
 
 const K = 0, W = 1, Y = 2, R = 3;
-const PALETTE = [[0,0,0],[255,255,255],[255,255,0],[255,0,0]];
+/* The panel's inks, matching what the app now exports — a card in different
+   colours than the exports would not be testing the same thing. */
+const PALETTE = [[0,0,0],[255,255,255],[255,192,0],[255,0,0]];
 
 function build(w, h) {
   const px = new Uint8Array(w * h).fill(W);

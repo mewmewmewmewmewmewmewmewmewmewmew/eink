@@ -140,6 +140,27 @@ line is the first thing to disappear if panel software rescales or re-dithers
 the image on its way to the display, and it is marginal on the panel itself, so
 weight buys lines that survive the trip.
 
+## The yellow is a mustard, on purpose
+
+The shipped yellow ink is **`#FFC000`**, not `#FFFF00`. A panel's yellow is a
+mustard pigment, and the panel's own software quantises to its measured inks —
+so a file claiming `#FFFF00` carries an error that the software then re-dithers,
+which is what breaks solid areas and one-pixel lines. Writing the ink it expects
+makes that re-dither a no-op.
+
+This is why the palette is **two palettes**. The quantiser matches against the
+idealised primaries (`#FFFF00`) and diffuses its error against them; only the
+bytes written out use the real pigment. Conflating the two is a trap worth
+naming: `#FFC000` sits far closer to mid-grey in the colour metric than
+`#FFFF00` does, so quantising *against* it turns grey mid-tones yellow and the
+picture falls apart. The panel's yellow still reads as yellow to the eye — same
+slot in the picture, different pigment — so matching keeps the bright primary
+and only the output changes.
+
+The inks stay editable in **About**, and edits change only what is written, not
+how the image is decided. If your panel's yellow measures differently, put its
+value in there.
+
 ## Getting it onto a panel
 
 Panel apps generally re-process whatever you upload, which can undo the work:

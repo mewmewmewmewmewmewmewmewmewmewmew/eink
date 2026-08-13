@@ -5,10 +5,33 @@
 /* ---------------------------------------------------------------- palette */
 /* Index order matters: it is the code written into the packed .bin export
    (0=black, 1=white, 2=yellow, 3=red — the usual Waveshare 4-colour layout). */
-const DEFAULT_PALETTE = [
+/* Two palettes, because the colours have two jobs.
+
+   MATCH_PALETTE is what the quantiser reasons about: which ink is nearest to
+   a pixel, and how much error is left over to diffuse. It is the idealised
+   primaries, and it stays that way.
+
+   DEFAULT_PALETTE is what actually gets written into the file. A panel's
+   yellow is not #FFFF00 — it is a mustard, and the panel's own software
+   quantises to its measured inks, so a file saying #FFFF00 carries an error
+   the software then re-dithers. Writing the ink the software expects is what
+   makes that re-dither a no-op.
+
+   Conflating the two is a trap: #FFC000 sits far closer to mid-grey than
+   #FFFF00 does, so quantising against it turns greys yellow. The panel's
+   yellow still reads as yellow to the eye — it is the same slot in the
+   picture, just a different pigment — so matching keeps the bright primary
+   and only the emitted bytes change. */
+const MATCH_PALETTE = [
   [0,   0,   0  ],  // 0 black
   [255, 255, 255],  // 1 white
   [255, 255, 0  ],  // 2 yellow
+  [255, 0,   0  ],  // 3 red
+];
+const DEFAULT_PALETTE = [
+  [0,   0,   0  ],  // 0 black
+  [255, 255, 255],  // 1 white
+  [255, 192, 0  ],  // 2 yellow — the panel's mustard, not a pure primary
   [255, 0,   0  ],  // 3 red
 ];
 const PAL_NAMES = ['black','white','yellow','red'];
@@ -27,8 +50,17 @@ const PALETTE = DEFAULT_PALETTE.map(c => c.slice());
 /* Flat copy — nearest() runs once per pixel per frame, and a typed array
    avoids re-dereferencing the nested arrays on every candidate. */
 const PAL_FLAT = new Float32Array(12);
+/* The matching palette never changes, so it is flattened once. */
+const MATCH_FLAT = new Float32Array(12);
+for (let i = 0; i < 4; i++) {
+  MATCH_FLAT[i * 3]     = MATCH_PALETTE[i][0];
+  MATCH_FLAT[i * 3 + 1] = MATCH_PALETTE[i][1];
+  MATCH_FLAT[i * 3 + 2] = MATCH_PALETTE[i][2];
+}
 
-const INK_KEY = 'einkcam.inks';
+/* Bumped when the shipped inks change, so every device picks the new ones up
+   instead of holding on to a copy of the old defaults. */
+const INK_KEY = 'einkcam.inks2';
 
 function hex(c) {
   return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
@@ -94,7 +126,7 @@ function nearest(r, g, b) {
   let best = inks[0], bestD = Infinity;
   for (let k = 0, n = inks.length; k < n; k++) {
     const i = inks[k], o = i * 3;
-    const dr = r - PAL_FLAT[o], dg = g - PAL_FLAT[o+1], db = b - PAL_FLAT[o+2];
+    const dr = r - MATCH_FLAT[o], dg = g - MATCH_FLAT[o+1], db = b - MATCH_FLAT[o+2];
     const d = WR*dr*dr + WG*dg*dg + WB*db*db;
     if (d < bestD) { bestD = d; best = i; }
   }
@@ -357,7 +389,10 @@ function grabFrame(src, sw, sh) {
    contrast slider has nudged half a level off the palette dithers into
    speckle — the one artefact this app exists to avoid. */
 function paintBackground(frame) {
-  const d = frame.data, bg = PALETTE[state.bg], n = W * H;
+  /* Filled with the matching colour, not the pigment: the fill is about to go
+     through the quantiser, and an exact match leaves no error to diffuse into
+     the edge of the photo. restoreBackground puts the real ink back after. */
+  const d = frame.data, bg = MATCH_PALETTE[state.bg], n = W * H;
   hasBg = false;
   for (let p = 0, i = 0; p < n; p++, i += 4) {
     const a = d[i + 3];
@@ -450,12 +485,15 @@ function quantize(mode_, amt) {
       const p = y * W + x, j = p * 3;
       const or = buf[j], og = buf[j + 1], ob = buf[j + 2];
       const idx = nearest(or, og, ob);
-      const pal = PALETTE[idx];
+      const m = idx * 3;
       emit(out, p, idx);
 
-      const er = (or - pal[0]) * amt;
-      const eg = (og - pal[1]) * amt;
-      const eb = (ob - pal[2]) * amt;
+      /* Diffuse what the matching colour left over. Measuring against the
+         emitted pigment instead would scatter a large constant error across
+         every neighbour, which is the very artefact this is here to avoid. */
+      const er = (or - MATCH_FLAT[m]) * amt;
+      const eg = (og - MATCH_FLAT[m + 1]) * amt;
+      const eb = (ob - MATCH_FLAT[m + 2]) * amt;
 
       if (atkinson) {
         const f = 1 / 8;
@@ -619,7 +657,7 @@ function nearestInk(r, g, b) {
     const i = inks[k];
     if (i === 1) continue;
     const o = i * 3;
-    const dr = r - PAL_FLAT[o], dg = g - PAL_FLAT[o+1], db = b - PAL_FLAT[o+2];
+    const dr = r - MATCH_FLAT[o], dg = g - MATCH_FLAT[o+1], db = b - MATCH_FLAT[o+2];
     const d = WR*dr*dr + WG*dg*dg + WB*db*db;
     if (d < bestD) { bestD = d; best = i; }
   }
