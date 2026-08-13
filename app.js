@@ -807,9 +807,23 @@ function etchRender() {
 
       if (lum >= inkLum) {
         /* Lighter than its own ink, so the ink covers part of the paper and
-           what shows through is what makes it pale. */
+           what shows through is what makes it pale.
+
+           Line weight multiplies that. The honest coverage for a very pale
+           colour is a few per cent, which is accurate and almost invisible —
+           a pale pink comes back as white paper with a hint of red in it.
+           Weight trades that accuracy for presence, so the colour can be
+           made to read as a light red rather than as nothing. Darkening the
+           image instead would work on the background too, and turn the paper
+           into black lines. */
         const room = 255 - inkLum;
-        const cov = room > 1 ? (255 - lum) / room : 1;
+        let cov = room > 1 ? (255 - lum) / room : 1;
+        /* Only the coloured inks. Black already spans the whole range from
+           paper to solid, so its honest coverage is the right amount and
+           multiplying it just floods the neutrals. Red and yellow can never
+           be darker than themselves, which is what leaves a pale tint of
+           them too faint to see. */
+        if (ink !== black) { cov *= state.weight; if (cov > 1) cov = 1; }
         emit(out, p, line(x, y, 0, cov) ? ink : paper);
       } else {
         /* Darker than its own ink can go. The ink covers everything and black
@@ -2534,7 +2548,8 @@ const SLIDERS = [
   ['s-edge',       'edge',       v => v.toFixed(2)],
   ['s-smooth',     'smooth',     v => v.toFixed(1)],
   ['s-detail',     'detail',     v => v.toFixed(1)],
-  ['s-weight',     'weight',     v => v.toFixed(0) + ' px'],
+  ['s-weight',     'weight',     v => (state.style === 'etch' ? '\u00d7' : '') +
+                                        v.toFixed(0) + (state.style === 'etch' ? '' : ' px')],
   ['s-zoom',       'zoom',       v => v.toFixed(1) + '×'],
   ['s-angle',      'angle',      v => (v > 0 ? '+' : '') + v.toFixed(0) + '\u00b0'],
 ];
@@ -2553,6 +2568,11 @@ function syncStyleUI() {
   $('dither-seg').classList.toggle('is-muted',
     state.style !== 'photo' && state.style !== 'thermal' && state.style !== 'riso');
   $('lbl-detail').textContent = DETAIL_LABEL[state.style] || 'Detail';
+  /* In Etch the slider multiplies how much ink a colour lays down rather than
+     how many pixels wide a line is. */
+  $('lbl-weight').textContent = state.style === 'etch' ? 'Ink weight' : 'Line weight';
+  $('o-weight').textContent = (state.style === 'etch' ? '\u00d7' : '') +
+    state.weight.toFixed(0) + (state.style === 'etch' ? '' : ' px');
 }
 
 function syncFlip() {

@@ -158,6 +158,15 @@ through is what makes it read pale. Below about a pixel a line stops being
 drawable, so the ordered matrix jitters the width and breaks it into a dashed
 trace rather than letting it alias into stripes.
 
+**Line weight** becomes **Ink weight** here, and multiplies that coverage. The
+honest amount for a very pale colour is a few per cent, which is accurate and
+almost invisible — a pale pink comes back as white paper with a hint of red in
+it, and no amount of tweaking exposure or contrast fixes it, because darkening
+the image blackens the paper too. Weight trades accuracy for presence: at ×3 a
+pale pink covers 30% and reads as a light red. It applies only to the coloured
+inks, since black already spans paper to solid and multiplying it just floods
+the neutrals — the greys hold at 46% whatever the weight.
+
 A colour darker than its own ink cannot be reached by covering paper, so there
 the ink goes solid and **black hatches across it** the other way — which is
 what stops a dark gold flattening into a block. Anything without a warm cast —
