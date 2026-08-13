@@ -374,6 +374,13 @@ is kept as PNG however big it turns out.
 *Save to Photos* and *Download PNG* are built from the same bytes, so the two
 can never disagree — including the portrait quarter turn.
 
+Save to Photos is feature-detected: it needs the Web Share API with file
+support, which is not universal and, being a powerful API, requires a **secure
+context** — an `http://` page does not get it however capable the browser is.
+When it is unavailable the sheet says which of the two reasons applies rather
+than quietly dropping the button, because a missing button reads as a missing
+feature and only one of those causes is fixable.
+
 ### Where projects are kept
 
 **On a server, when one is configured** — browser storage is not a safe home for
