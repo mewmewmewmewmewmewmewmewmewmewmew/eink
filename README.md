@@ -127,6 +127,7 @@ page code changes it.
 | **Riso**     | Spot-colour print, one pass per ink, deliberately out of register. |
 | **Engrave**  | A line screen — line thickness tracks tone, in the local ink. |
 | **Etch**     | The same line screen, but the line keeps the colour's hue and spends its brightness on how much paper it covers. |
+| **Litho**    | A line screen of constant width, dithered inside the line — the weight is yours to choose, the tone comes from the fill. |
 | **Hatch**    | Crosshatching; further directions cut in as the tone deepens. |
 | **Contour**  | Iso-luminance lines, coloured by band, like a topographic map. |
 
@@ -183,6 +184,44 @@ exactly as Engrave does.
 | grey | yellow, 46% | **black**, 46% |
 | blue | yellow, 47% | **black**, 47% |
 
+## Litho: the line width is a choice, not a measurement
+
+Engrave and Etch both spend the tone on the line — dark means a fat line, pale
+means a thin one — so the line weight is never yours to set. **Litho** keeps
+Engrave's geometry, one direction and one gap, but the band is a **constant
+width** picked from the slider, and the tone is dithered *inside* it. A pale
+area drawn with a thick line is a thick line that is mostly paper.
+
+The fill is the fraction of ink it takes to tint the paper down to the tone —
+`(paper − colour) ÷ (paper − ink)` — and the band's width is deliberately not
+part of that sum. Dividing by it (so that a narrow band could still reach solid
+black) crushes the whole picture: at the narrowest setting nearly every tone
+demands more than a full band, everything spills into the black fallback, and
+seven of eight test swatches came out as the same flat 35% black. Leaving the
+width out costs range at the narrow end — a narrow screen simply cannot go very
+dark — and that is the honest answer. The slider reads **Line width**, and its
+percentages are the band, not the ink.
+
+Colour follows Etch: the ink is chosen by hue, and where the colour is lighter
+than the paper in tone but still plainly coloured, its **chroma** claims the
+band instead. That case is not hypothetical — the tone curve legitimately lifts
+a near-white pink to luma 256, one step *above* white paper, so the tint
+fraction is zero or negative and the swatch would vanish. Below the ink's own
+brightness the shortfall goes to black in a second dither level, exactly as in
+Etch, so a dark gold is yellow and black in the same band.
+
+The ordered matrix is indexed **along and across the line**, not along the
+screen axes. A band only ever covers a couple of columns of an upright matrix,
+so the thresholds available inside it are a fixed slice of the range and the
+palest tones round away to nothing however small the fill gets.
+
+| | Engrave | Etch | Litho |
+|---|---|---|---|
+| pale pink | yellow, 6% | **red**, 47% | **red**, 14% |
+| near-white pink | nothing | **red**, 21% | **red**, 6% |
+| strong pink | — | **red**, 92% | **red**, 35% (a full band) |
+| grey | yellow, 46% | **black**, 46% | **black**, 14% |
+
 ## The tone curve is not 8-bit
 
 `LUT` is a `Float32Array` rather than a `Uint8ClampedArray`, and that is not an
@@ -197,12 +236,13 @@ highlight to amplify.
 Everything reading the buffer either measures differences or quantises, so
 values above 255 are harmless there, and `posterize` clamps on its own account.
 
-Those five share one **Detail** slider, relabelled to whatever it means for the
+The screen and line styles share one **Detail** slider, relabelled to whatever it means for the
 style: *Misregister*, *Line gap*, *Spacing* — or, for **Halftone**, *Dot size*,
 which scales the clustered-dot cell so the screen can read as a coarse newsprint
 rosette instead of a single-pixel one.
 
-**Sketch** and **Contour** add a **Line weight** slider (1–4 px). A one-pixel
+**Sketch** and **Contour** add a **Line weight** slider (1–4 px) — the same
+control is *Ink weight* for Etch and *Line width* for Litho. A one-pixel
 line is the first thing to disappear if panel software rescales or re-dithers
 the image on its way to the display, and it is marginal on the panel itself, so
 weight buys lines that survive the trip.

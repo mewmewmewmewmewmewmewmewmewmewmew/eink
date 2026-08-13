@@ -796,6 +796,80 @@ function hueInk(r, g, b) {
    Below about a pixel a line stops being drawable and would either vanish or
    alias into stripes, so the ordered matrix jitters the width and breaks it
    into a dashed trace instead. That is the dither doing the lightening. */
+/* Litho — Engrave's geometry with the tone moved inside the line.
+
+   Engrave and Etch both vary how much of the paper the line covers, so a light
+   colour ends up as a thin line. This one holds the line at whatever thickness
+   is asked for and dithers within it instead: a pale pink is a broad red band
+   with the paper showing through in a fine screen, which is what lets a thick
+   line still read light.
+
+   The arithmetic is just the average. Inside a band covering w of the area, an
+   ink of brightness I laid at density d averages 255 - w*d*(255 - I), so
+   matching the pixel's brightness means d = (255 - lum) / (w * (255 - I)).
+   Where that would exceed 1 the ink cannot go dark enough on its own, and
+   black takes over the remainder of the band. */
+const LITHO_WIDTH = [0.35, 0.55, 0.75, 0.92];   // by Line weight, 1..4
+
+function lithoRender() {
+  const out = imgData.data;
+  boxBlur(Math.round(state.smooth), 1);
+  computeLuma();
+
+  const period = Math.max(2.5, state.detail);
+  const paper = paperInk();
+  const paperLum = INK_LUMA[paper];
+  const black = inks.indexOf(0) >= 0 ? 0 : -1;
+  const w = LITHO_WIDTH[Math.min(3, Math.max(0, Math.round(state.weight) - 1))];
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x, j = p * 3;
+
+      /* The band, always the same direction and always the same width. */
+      const u = (x * HATCH[0][0] + y * HATCH[0][1]) / period;
+      const f = u - Math.floor(u);
+      if (Math.abs(f - 0.5) * 2 >= w) { emit(out, p, paper); continue; }
+
+      const cr = buf[j], cg = buf[j + 1], cb = buf[j + 2];
+      const ink = hueInk(cr, cg, cb);
+      const lum = luma[p];
+      const inkLum = INK_LUMA[ink];
+
+      /* How densely the band has to be filled to hit this tone: the fraction
+         of ink it takes to tint the paper down to it. The band's width never
+         enters into this — that is the whole point of the style. */
+      const span = paperLum - inkLum;
+      let dInk = span > 1 ? (paperLum - lum) / span : lum < paperLum ? 1 : 0;
+      let dBlack = 0;
+      if (dInk > 1) {
+        /* Darker than the ink itself can go; the shortfall is made up in
+           black, and the band fills completely. */
+        dInk = black >= 0 && inkLum > 1 ? lum / inkLum : 1;
+        dInk = dInk < 0 ? 0 : dInk > 1 ? 1 : dInk;
+        dBlack = black >= 0 ? 1 - dInk : 0;
+      } else {
+        /* A colour can be lighter than the paper in tone and still be plainly
+           coloured — a pale pink is the obvious case. Let its chroma claim the
+           band the way Etch does, so it reads as pink rather than as nothing. */
+        const score = ink === 2 ? Math.min(cr, cg) - cb : ink === 3 ? cr - cg : 0;
+        const chroma = score / CHROMA_FULL;
+        if (chroma > dInk) dInk = chroma > 1 ? 1 : chroma;
+        if (dInk < 0) dInk = 0;
+      }
+
+      /* Ordered screen inside the band, so the density reads as lightness
+         rather than as noise. It is indexed along and across the line rather
+         than along the screen axes: a band only ever covers a couple of
+         columns of an upright matrix, so the thresholds it could reach there
+         are a fixed slice of the range and the palest tones would round away
+         to nothing. */
+      const t = bayerAt(Math.round(x * HATCH[0][0] - y * HATCH[0][1]),
+                        Math.round(u * period)) + 0.5;      emit(out, p, t < dInk ? ink : t < dInk + dBlack ? black : paper);
+    }
+  }
+}
+
 function etchRender() {
   const out = imgData.data;
   boxBlur(Math.round(state.smooth), 1);
@@ -984,6 +1058,10 @@ function renderStyle() {
 
     case 'etch':
       etchRender();
+      break;
+
+    case 'litho':
+      lithoRender();
       break;
 
     case 'crosshatch':
@@ -2570,17 +2648,25 @@ const SLIDERS = [
   ['s-edge',       'edge',       v => v.toFixed(2)],
   ['s-smooth',     'smooth',     v => v.toFixed(1)],
   ['s-detail',     'detail',     v => v.toFixed(1)],
-  ['s-weight',     'weight',     v => (state.style === 'etch' ? '\u00d7' : '') +
-                                        v.toFixed(0) + (state.style === 'etch' ? '' : ' px')],
+  ['s-weight',     'weight',     v => weightLabel(v)],
   ['s-zoom',       'zoom',       v => v.toFixed(1) + '×'],
   ['s-angle',      'angle',      v => (v > 0 ? '+' : '') + v.toFixed(0) + '\u00b0'],
 ];
 
 /* Sliders that only matter for some styles are hidden for the rest, and the
    dither row is dimmed when the active style ignores it. */
+/* The weight slider means a different thing in each of the line styles. */
+function weightLabel(v) {
+  if (state.style === 'etch')  return '\u00d7' + v.toFixed(0);
+  if (state.style === 'litho') return Math.round(LITHO_WIDTH[
+    Math.min(3, Math.max(0, Math.round(v) - 1))] * 100) + '%';
+  return v.toFixed(0) + ' px';
+}
+
 const DETAIL_LABEL = {
   halftone: 'Dot size', riso: 'Misregister',
-  engrave: 'Line gap', etch: 'Line gap', crosshatch: 'Line gap', contour: 'Spacing',
+  engrave: 'Line gap', etch: 'Line gap', litho: 'Line gap',
+  crosshatch: 'Line gap', contour: 'Spacing',
 };
 
 function syncStyleUI() {
@@ -2592,9 +2678,9 @@ function syncStyleUI() {
   $('lbl-detail').textContent = DETAIL_LABEL[state.style] || 'Detail';
   /* In Etch the slider multiplies how much ink a colour lays down rather than
      how many pixels wide a line is. */
-  $('lbl-weight').textContent = state.style === 'etch' ? 'Ink weight' : 'Line weight';
-  $('o-weight').textContent = (state.style === 'etch' ? '\u00d7' : '') +
-    state.weight.toFixed(0) + (state.style === 'etch' ? '' : ' px');
+  $('lbl-weight').textContent = state.style === 'etch' ? 'Ink weight'
+    : state.style === 'litho' ? 'Line width' : 'Line weight';
+  $('o-weight').textContent = weightLabel(state.weight);
 }
 
 function syncFlip() {
