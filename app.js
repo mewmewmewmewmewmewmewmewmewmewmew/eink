@@ -327,8 +327,11 @@ function cropGeom(sw, sh) {
   const keepX = KEEP_ON_PANEL * Math.min(dw, tw);
   const keepY = KEEP_ON_PANEL * Math.min(dh, th);
   const maxCX = (tw + dw) / 2 - keepX, maxCY = (th + dh) / 2 - keepY;
-  const cx = clampAbs(view.panX * marginX + view.offX, maxCX);
-  const cy = clampAbs(view.panY * marginY + view.offY, maxCY);
+  /* Rounded to whole pixels: at a fractional offset the edge column is only
+     partly covered by the photo, and that fraction blends with the background
+     into a pale line down the side. */
+  const cx = Math.round(clampAbs(view.panX * marginX + view.offX, maxCX));
+  const cy = Math.round(clampAbs(view.panY * marginY + view.offY, maxCY));
 
   return {
     tw, th, cw, ch, dw, dh, slackX, slackY, marginX, marginY, maxCX, maxCY,
@@ -1214,45 +1217,65 @@ function panBy(dx, dy) {
    threshold every stray movement of a finger would slide the picture off and
    leave a band of background down the side — which reads as a bug, not as a
    composition. So the leftover from a drag builds up as pressure, and only
-   what exceeds the deadband moves the photo.
-
-   The deadband only guards the start. Once the photo is already hanging off,
-   dragging it further or bringing it back answers immediately, because by then
-   the intent is not in doubt. */
+   what exceeds the deadband moves the photo. */
 const OVERHANG_DEADBAND = 48;
-const press = { x: 0, y: 0, offX: 0, offY: 0 };
+/* Within this of flush, the photo snaps to the edge. Landing exactly on zero
+   by hand is not possible, and a two-pixel band of background down the side is
+   the thing being complained about, not a composition anyone chose. */
+const OVERHANG_SNAP = 5;
+const press = { panX: 0, panY: 0 };
 
-function startOverhang() {
-  press.x = 0; press.y = 0;
-  press.offX = view.offX; press.offY = view.offY;
-}
+function startOverhang() { press.panX = 0; press.panY = 0; }
 
-function overhangTarget(axis, offKey, leftover) {
-  press[axis] += leftover;
-  const from = press[offKey];
-  if (from !== 0) return from + press[axis];      // already off: no threshold
-  const past = Math.abs(press[axis]) - OVERHANG_DEADBAND;
-  return past > 0 ? Math.sign(press[axis]) * past : 0;
-}
+/* A drag feeds two reservoirs, and the order matters in each direction.
 
-/* One drag has to feed two things in turn: the pan, until the photo is as far
-   over as its crop or its margin allows, and then the overhang. Whatever the
-   pan could not absorb is handed on rather than dropped, so a long drag runs
-   smoothly from one into the other instead of sticking at the limit.
+   Going out: the pan first, until the crop or the margin is used up, and only
+   then the overhang — so the gesture runs smoothly from one into the other
+   instead of sticking at the limit.
+
+   Coming back: the overhang first, because it was the last thing filled. Doing
+   it the other way round lets the pan quietly absorb the whole return drag
+   while the photo stays stuck off the edge — which is exactly what it did, and
+   at any zoom with crop slack it could not be undone by dragging at all.
 
    Pan is inverted in crop mode — there the gesture moves the window, not the
-   picture — which is why the two branches differ in sign. */
+   picture — which is why those two branches differ in sign. */
 function slide(panKey, offKey, d, slack, margin, perPx, maxC, marginPx) {
-  let pan = view[panKey], used = 0;
+  let pan = view[panKey], off = view[offKey], rest = d;
+  const wasOut = off !== 0;
 
-  if (slack > 0) {
-    const next = clamp1(pan - d * perPx / slack);
-    used = (pan - next) * slack / perPx;
-    pan = next;
-  } else if (margin > 0) {
-    const next = clamp1(pan + d / margin);
-    used = (next - pan) * margin;
-    pan = next;
+  if (off !== 0 && rest * off < 0) {
+    const next = off + rest;
+    if (off > 0 ? next <= 0 : next >= 0) {
+      rest = next;                 // overhang spent; the remainder pans
+      off = 0;
+      press[panKey] = 0;           // leaving again has to clear the deadband
+    } else {
+      off = next;
+      rest = 0;
+    }
+  }
+
+  let used = 0;
+  if (rest !== 0) {
+    if (slack > 0) {
+      const next = clamp1(pan - rest * perPx / slack);
+      used = (pan - next) * slack / perPx;
+      pan = next;
+    } else if (margin > 0) {
+      const next = clamp1(pan + rest / margin);
+      used = (next - pan) * margin;
+      pan = next;
+    }
+  }
+
+  const leftover = rest - used;
+  if (off !== 0) {
+    off += leftover;               // already out: no threshold to clear
+  } else if (leftover) {
+    press[panKey] += leftover;
+    const past = Math.abs(press[panKey]) - OVERHANG_DEADBAND;
+    off = past > 0 ? Math.sign(press[panKey]) * past : 0;
   }
 
   /* Clamped against what pan already contributes, so the stored offset never
@@ -1260,8 +1283,15 @@ function slide(panKey, offKey, d, slack, margin, perPx, maxC, marginPx) {
      of the gesture undoing slack that was never visible. */
   const centre = pan * marginPx;
   const lo = -maxC - centre, hi = maxC - centre;
-  const o = overhangTarget(panKey === 'panX' ? 'x' : 'y', offKey, d - used);
-  view[offKey] = o < lo ? lo : o > hi ? hi : o;
+  if (off < lo) off = lo; else if (off > hi) off = hi;
+  /* Only on the way back. Applied while the overhang is growing it would snap
+     the photo home the moment it crossed the deadband, and it could never
+     leave the edge at all. */
+  if (wasOut && margin === 0 && Math.abs(off) < OVERHANG_SNAP) {
+    off = 0; press[panKey] = 0;
+  }
+
+  view[offKey] = off;
   return pan;
 }
 function clamp1(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
