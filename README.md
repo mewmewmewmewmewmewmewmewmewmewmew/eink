@@ -126,6 +126,7 @@ page code changes it.
 | **Thermal**  | False colour: the palette read as a brightness ramp rather than as hues. |
 | **Riso**     | Spot-colour print, one pass per ink, deliberately out of register. |
 | **Engrave**  | A line screen — line thickness tracks tone, in the local ink. |
+| **Etch**     | The same line screen, but the line keeps the colour's hue and spends its brightness on how much paper it covers. |
 | **Hatch**    | Crosshatching; further directions cut in as the tone deepens. |
 | **Contour**  | Iso-luminance lines, coloured by band, like a topographic map. |
 
@@ -141,6 +142,34 @@ it swallows saturated reds and the whole print turns grey.
 
 **Engrave**, **Hatch** and **Contour** ink their lines in the nearest colour to
 what is underneath rather than always black, so a red shirt gets red hatching.
+
+**Etch** exists because "nearest colour" is the wrong question for a line
+screen. A line cannot be white — a white line on white paper is not a line — so
+the choice is between black, red and yellow, and yellow is the only bright one
+of the three. That makes brightness decide: a pale pink sits at luma 240 and
+lands on yellow, more than twice as far from red as from yellow. Right answer,
+wrong question.
+
+Etch picks the ink by **hue alone** and spends the brightness on **coverage**
+instead. To average out at the colour's brightness, an ink has to cover
+`(255 − colour) ÷ (255 − ink)` of the area — pale pink against red is 14/179,
+eight per cent — so it comes out as a fine red trace, and the paper showing
+through is what makes it read pale. Below about a pixel a line stops being
+drawable, so the ordered matrix jitters the width and breaks it into a dashed
+trace rather than letting it alias into stripes.
+
+A colour darker than its own ink cannot be reached by covering paper, so there
+the ink goes solid and **black hatches across it** the other way — which is
+what stops a dark gold flattening into a block. Anything without a warm cast —
+greys, greens, blues — has no ink to be, so it goes to black and reads as tone,
+exactly as Engrave does.
+
+| | Engrave | Etch |
+|---|---|---|
+| pale pink | yellow, 20% covered | **red**, 10% |
+| blush | yellow, 19% | **red**, 28% |
+| grey | yellow, 46% | **black**, 46% |
+| blue | yellow, 47% | **black**, 47% |
 
 Those five share one **Detail** slider, relabelled to whatever it means for the
 style: *Misregister*, *Line gap*, *Spacing* — or, for **Halftone**, *Dot size*,

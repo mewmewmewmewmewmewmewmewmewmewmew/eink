@@ -737,6 +737,93 @@ function risoRender() {
    the tone deepens, the way an etching builds up shadow. */
 const HATCH = [[0.7071, 0.7071], [0.7071, -0.7071], [1, 0], [0, 1]];
 
+/* How light each ink is. Etch works out how much of an area to cover by
+   comparing the colour's brightness with its ink's, so it needs these. */
+const INK_LUMA = MATCH_PALETTE.map(c => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]);
+
+/* The ink a colour belongs to by hue alone, with brightness ignored.
+
+   nearestInk() answers a different question — which ink is nearest overall —
+   and with white excluded from a line screen, brightness decides it: a pale
+   pink sits luma 240 and lands on yellow, because yellow is the only bright
+   ink left. Right answer to the wrong question. Here the hue picks the ink and
+   the brightness is spent on coverage instead, so pale pink becomes thin red
+   lines rather than solid yellow ones.
+
+   Anything without a warm cast — greys, greens, blues — has no ink to be, so
+   it goes to black and reads as tone. */
+function hueInk(r, g, b) {
+  const hasY = inks.indexOf(2) >= 0, hasR = inks.indexOf(3) >= 0;
+  const dark = inks.indexOf(0) >= 0 ? 0 : inks[0];
+  const yellowness = Math.min(r, g) - b;
+  const redness = r - Math.max(g, b);
+  if (yellowness < 12 && redness < 12) return dark;
+  if (hasY && hasR) return yellowness > redness ? 2 : 3;
+  if (hasY && yellowness >= 12) return 2;
+  if (hasR && redness >= 12) return 3;
+  return dark;
+}
+
+/* A line screen like Engrave, but the line keeps the colour's hue and spends
+   its brightness on how much of the paper it covers.
+
+   Coverage is the honest amount: to average out at the colour's brightness,
+   an ink of its own brightness has to cover (255 - colour) / (255 - ink) of
+   the area. Pale pink against red is 14/179 — eight per cent — so it comes
+   out as a fine red trace rather than a solid line, and the paper showing
+   through it is what makes it read pale. Bright yellow against yellow is over
+   1 and clamps to solid.
+
+   Below about a pixel a line stops being drawable and would either vanish or
+   alias into stripes, so the ordered matrix jitters the width and breaks it
+   into a dashed trace instead. That is the dither doing the lightening. */
+function etchRender() {
+  const out = imgData.data;
+  boxBlur(Math.round(state.smooth), 1);
+  computeLuma();
+
+  const period = Math.max(2.5, state.detail);
+  const paper = paperInk();
+  const jitter = 0.5 * state.ditherAmt;
+  const black = inks.indexOf(0) >= 0 ? 0 : -1;
+
+  /* Whether the line pattern covers this pixel at the given width. Below about
+     a pixel a line stops being drawable and would either vanish or alias into
+     stripes, so the ordered matrix jitters the width and breaks it into a
+     dashed trace instead — that is the dither doing the lightening. */
+  const line = (x, y, dir, cov) => {
+    const u = (x * HATCH[dir][0] + y * HATCH[dir][1]) / period;
+    const f = u - Math.floor(u);
+    const width = Math.min(0.95, cov * 1.15) + bayerAt(x, y) * jitter * cov;
+    return Math.abs(f - 0.5) * 2 < width;
+  };
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x, j = p * 3;
+      const ink = hueInk(buf[j], buf[j + 1], buf[j + 2]);
+      const lum = luma[p];
+      const inkLum = INK_LUMA[ink];
+
+      if (lum >= inkLum) {
+        /* Lighter than its own ink, so the ink covers part of the paper and
+           what shows through is what makes it pale. */
+        const room = 255 - inkLum;
+        const cov = room > 1 ? (255 - lum) / room : 1;
+        emit(out, p, line(x, y, 0, cov) ? ink : paper);
+      } else {
+        /* Darker than its own ink can go. The ink covers everything and black
+           takes the rest, crossing the other way — which is what keeps a
+           yellow area from flattening into a solid block. */
+        emit(out, p, ink);
+        if (black >= 0 && inkLum > 1 && line(x, y, 1, (inkLum - lum) / inkLum)) {
+          emit(out, p, black);
+        }
+      }
+    }
+  }
+}
+
 function lineRender(cross) {
   const out = imgData.data;
   boxBlur(Math.round(state.smooth), 1);
@@ -857,6 +944,10 @@ function renderStyle() {
 
     case 'engrave':
       lineRender(false);
+      break;
+
+    case 'etch':
+      etchRender();
       break;
 
     case 'crosshatch':
@@ -2452,7 +2543,7 @@ const SLIDERS = [
    dither row is dimmed when the active style ignores it. */
 const DETAIL_LABEL = {
   halftone: 'Dot size', riso: 'Misregister',
-  engrave: 'Line gap', crosshatch: 'Line gap', contour: 'Spacing',
+  engrave: 'Line gap', etch: 'Line gap', crosshatch: 'Line gap', contour: 'Spacing',
 };
 
 function syncStyleUI() {
