@@ -2645,13 +2645,14 @@ function wire() {
   } else {
     /* Saving to Photos goes through the system share sheet, which not every
        browser offers. Hiding the button silently makes that look like the app
-       has lost a feature, so it says which of the two reasons applies —
-       one of them is fixable in a way the other is not. */
-    const note = $('share-note');
-    note.hidden = false;
-    note.textContent = !window.isSecureContext
-      ? 'Save to Photos needs a secure (https) connection — this page is not on one.'
-      : 'This browser cannot save straight to Photos. Download the PNG instead.';
+       has lost a feature, so it says so — except on an insecure page, where
+       the cause is the page rather than the browser and the reader can do
+       nothing about it from here. */
+    if (window.isSecureContext) {
+      const note = $('share-note');
+      note.hidden = false;
+      note.textContent = 'This browser cannot save straight to Photos. Download the PNG instead.';
+    }
   }
 
   $('btn-use-camera').addEventListener('click', () => startCamera());

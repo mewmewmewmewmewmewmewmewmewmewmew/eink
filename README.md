@@ -375,11 +375,12 @@ is kept as PNG however big it turns out.
 can never disagree — including the portrait quarter turn.
 
 Save to Photos is feature-detected: it needs the Web Share API with file
-support, which is not universal and, being a powerful API, requires a **secure
-context** — an `http://` page does not get it however capable the browser is.
-When it is unavailable the sheet says which of the two reasons applies rather
-than quietly dropping the button, because a missing button reads as a missing
-feature and only one of those causes is fixable.
+support, which is not universal and, being a powerful API, also requires a
+**secure context** — an `http://` page does not get it however capable the
+browser is. When the browser is the reason, the sheet says so, since a missing
+button otherwise reads as a missing feature. When the page is the reason it
+says nothing: that is a property of how the app is being served, which the
+person looking at the sheet cannot act on.
 
 ### Where projects are kept
 
