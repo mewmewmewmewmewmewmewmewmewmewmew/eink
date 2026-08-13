@@ -352,6 +352,15 @@ into the other instead of sticking at the limit. A fifth of the photo always
 stays on the panel — far enough to be a deliberate composition, not far enough
 to lose the picture off the side and wonder where it went.
 
+Hanging it off has to be asked for, though. At zoom 1 the photo exactly fills
+the panel and one axis usually has no pan at all, so without a threshold every
+stray movement of a finger would slide the picture off and leave a band of
+background down the side. The leftover from a drag therefore builds up as
+pressure and only what exceeds a **48 px deadband** moves the photo. The
+deadband guards the start only: once the photo is already hanging off, dragging
+it further or bringing it back answers immediately, because by then the intent
+is not in doubt.
+
 **Rotate** tilts the photo −45° to +45°, on top of the ↺ ↻ quarter turns — the
 two compose, so any angle is reachable. Only the quarter turns swap the panel's
 width and height for the aspect fit, which is why they stay a separate control.

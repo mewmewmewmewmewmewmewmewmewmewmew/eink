@@ -1209,6 +1209,32 @@ function panBy(dx, dy) {
   view.panY = slide('panY', 'offY', dv, g.slackY, g.marginY, perPx, g.maxCY, g.marginY);
 }
 
+/* Pushing the photo off the edge has to be asked for. At zoom 1 the photo
+   exactly fills the panel and one axis usually has no pan at all, so without a
+   threshold every stray movement of a finger would slide the picture off and
+   leave a band of background down the side — which reads as a bug, not as a
+   composition. So the leftover from a drag builds up as pressure, and only
+   what exceeds the deadband moves the photo.
+
+   The deadband only guards the start. Once the photo is already hanging off,
+   dragging it further or bringing it back answers immediately, because by then
+   the intent is not in doubt. */
+const OVERHANG_DEADBAND = 48;
+const press = { x: 0, y: 0, offX: 0, offY: 0 };
+
+function startOverhang() {
+  press.x = 0; press.y = 0;
+  press.offX = view.offX; press.offY = view.offY;
+}
+
+function overhangTarget(axis, offKey, leftover) {
+  press[axis] += leftover;
+  const from = press[offKey];
+  if (from !== 0) return from + press[axis];      // already off: no threshold
+  const past = Math.abs(press[axis]) - OVERHANG_DEADBAND;
+  return past > 0 ? Math.sign(press[axis]) * past : 0;
+}
+
 /* One drag has to feed two things in turn: the pan, until the photo is as far
    over as its crop or its margin allows, and then the overhang. Whatever the
    pan could not absorb is handed on rather than dropped, so a long drag runs
@@ -1234,7 +1260,7 @@ function slide(panKey, offKey, d, slack, margin, perPx, maxC, marginPx) {
      of the gesture undoing slack that was never visible. */
   const centre = pan * marginPx;
   const lo = -maxC - centre, hi = maxC - centre;
-  const o = view[offKey] + (d - used);
+  const o = overhangTarget(panKey === 'panX' ? 'x' : 'y', offKey, d - used);
   view[offKey] = o < lo ? lo : o > hi ? hi : o;
   return pan;
 }
@@ -1259,7 +1285,7 @@ function bindGestures() {
        through before the gesture starts. */
     if (e.target.closest('button, label, input')) return;
     try { stage.setPointerCapture(e.pointerId); } catch (_) { /* stale id */ }
-    if (ptrs.size === 0) dragText = textGesture();
+    if (ptrs.size === 0) { dragText = textGesture(); startOverhang(); }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size === 2) {
       pinch = { dist: pinchDist(), zoom: state.zoom, size: layer().size, onText: dragText };
