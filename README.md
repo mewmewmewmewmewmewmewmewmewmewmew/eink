@@ -389,9 +389,18 @@ dropped in vertical mode, since a blank line reads as a gap rather than a word
 break.
 
 The caption field takes **line breaks** — press Return and the caption runs to
-another line. Lines are centred on each other and the block grows evenly around
-the caption's position, so adding one does not shove the text downwards. The
-field itself grows with the text rather than scrolling a one-line window.
+another line. The block grows evenly around the caption's position, so adding a
+line does not shove the text downwards. The field itself grows with the text
+rather than scrolling a one-line window.
+
+**Left / Centre / Right** sets how those lines stack up, per caption. Every line
+is drawn from its own centre, so aligning them is a matter of sliding each one
+by half of what it is short of the longest — which means left and right are the
+edges of the *longest line*, not of the bitmap, and the outline keeps an even
+margin down both sides. The longest line does not move at all: alignment shifts
+the short lines around it rather than shifting the caption. A one-line caption
+renders identically at all three settings, and a project saved before this
+existed opens centred, which is how it was drawn.
 
 Up to **nine captions** are supported. The numbered tabs at the top of the
 drawer switch between them and **＋** adds another; each carries its own text,

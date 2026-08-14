@@ -240,7 +240,8 @@ body[data-mode="choose"] #frame{display:none}
 }
 .chip.wide{flex:1}
 .chip:active{background:#2b2f36}
-.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.chip[aria-pressed="true"],
+.chip[aria-checked="true"]{border-color:var(--accent);color:var(--accent)}
 
 .sliders{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));

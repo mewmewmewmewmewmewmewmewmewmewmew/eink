@@ -1136,6 +1136,7 @@ function newLayer(i) {
     outlineColor: 0,
     x: layerHome(i).x, y: layerHome(i).y,
     angle: 0,            // degrees, clockwise
+    align: 'center',     // how the lines of a multi-line caption line up
     vertical: false,     // one character per line
     bmp: null,           // {w, h, mask, idx} in panel pixels
     dirty: true,
@@ -1175,8 +1176,11 @@ function buildTextBitmap(L) {
     : str.replace(/\s+$/, '').split('\n');
   const lineH = px * 1.12;
 
-  let widest = 0;
-  for (const ln of lines) widest = Math.max(widest, tctx.measureText(ln).width / SS);
+  /* Kept at the supersampled scale: the alignment offsets below are applied in
+     the same units the text is drawn in. */
+  const widths = lines.map(ln => tctx.measureText(ln).width);
+  const widestSS = widths.length ? Math.max(...widths) : 0;
+  const widest = widestSS / SS;
   const cw0 = widest + lw * 2 + 6;
   const ch0 = (lines.length > 1 || L.vertical)
     ? lines.length * lineH + lw * 2 + 6
@@ -1210,9 +1214,17 @@ function buildTextBitmap(L) {
     tctx.translate(cw / 2, ch / 2);
     if (rad) tctx.rotate(rad);
 
+    /* Every line is drawn from its own centre, so aligning them is a matter of
+       sliding each one by half of what it is short of the longest. Left and
+       right are the edges of the longest line, not of the bitmap, which is
+       what keeps the outline's margin even down both sides. */
     const step = lineH * SS;
+    const pull = L.align === 'left' ? -0.5 : L.align === 'right' ? 0.5 : 0;
     let y = -(lines.length - 1) * step / 2;
-    for (const ln of lines) { if (ln) paint(ln, 0, y); y += step; }
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]) paint(lines[i], pull * (widestSS - widths[i]), y);
+      y += step;
+    }
     tctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const d = tctx.getImageData(0, 0, cw, ch).data;
@@ -2206,7 +2218,7 @@ function serialiseTexts() {
   return texts.map(L => ({
     value: L.value, font: L.font, size: L.size, outline: L.outline,
     color: L.color, outlineColor: L.outlineColor, x: L.x, y: L.y,
-    angle: L.angle, vertical: L.vertical,
+    angle: L.angle, align: L.align, vertical: L.vertical,
   }));
 }
 
@@ -2757,6 +2769,11 @@ function syncTextControls() {
   $('t-angle').value = L.angle || 0;
   $('ot-angle').textContent = (L.angle || 0) + '\u00b0';
   $('t-vertical').setAttribute('aria-pressed', String(!!L.vertical));
+  document.querySelectorAll('[data-align]').forEach(b => {
+    const on = b.dataset.align === (L.align || 'center');
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
   document.querySelectorAll('[data-font]').forEach(b => {
     const on = b.dataset.font === L.font;
     b.classList.toggle('is-active', on);
@@ -2898,6 +2915,14 @@ function bindTextControls() {
     L.vertical = !L.vertical;
     $('t-vertical').setAttribute('aria-pressed', String(L.vertical));
     markTextDirty();
+  });
+
+  document.querySelectorAll('[data-align]').forEach(b => {
+    b.addEventListener('click', () => {
+      layer().align = b.dataset.align;
+      syncTextControls();
+      markTextDirty();
+    });
   });
 
   const outline = $('t-outline');
