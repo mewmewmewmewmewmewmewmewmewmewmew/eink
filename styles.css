@@ -80,10 +80,15 @@ body:not([data-mode="review"]) .only-review{display:none!important}
 .seg-float{
   position:absolute;top:2px;right:8px;z-index:3;
   flex:0 0 auto;width:auto;
+  /* With many captions it lists more than fits. It floats over the picture, so
+     it is held to about two thirds of the stage and scrolls past that rather
+     than growing across the whole top of the photo. */
+  max-width:min(calc(100% - 16px), 258px);overflow-x:auto;scrollbar-width:none;
   background:rgba(25,27,31,.86);
   backdrop-filter:blur(6px);
   padding:2px;border-radius:9px;
 }
+.seg-float::-webkit-scrollbar{display:none}
 .seg-float .seg-btn{font-size:11px;padding:5px 11px;flex:0 0 auto}
 .seg-float[hidden]{display:none}
 /* NOT a flex container: a canvas as a flex item gets stretched by align-items
@@ -167,7 +172,8 @@ body[data-mode="choose"] #frame{display:none}
 .panel-tabs .chip[aria-expanded="true"] .chev{transform:rotate(180deg)}
 
 /* ---------- text overlay ---------- */
-.layer-row{display:flex;gap:6px;margin-bottom:7px}
+/* Wraps: nine captions plus the add button is wider than a phone. */
+.layer-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
 .lchip{
   appearance:none;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);
   font:inherit;font-size:13px;font-weight:600;

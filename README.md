@@ -393,18 +393,33 @@ another line. Lines are centred on each other and the block grows evenly around
 the caption's position, so adding one does not shove the text downwards. The
 field itself grows with the text rather than scrolling a one-line window.
 
-Up to **three captions** are supported. The numbered tabs at the top of the
+Up to **nine captions** are supported. The numbered tabs at the top of the
 drawer switch between them and **＋** adds another; each carries its own text,
-font, size, inks and position, and they stack in order so caption 3 draws over
-caption 1. New captions start at staggered heights so they do not land on top of
-each other. The **×** removes the caption being edited (or empties it, if it is
+font, size, inks and position, and they stack in order so caption 9 draws over
+caption 1. The **×** removes the caption being edited (or empties it, if it is
 the only one).
+
+Nine is where the cap sits because it is the last count that keeps every tab a
+**single digit**, so the tab row is the same set of same-sized chips whatever is
+on it. It wraps to a second line rather than running off the side of a phone.
+
+New captions start on staggered spots so they do not land exactly on top of one
+already there — three heights, and each further pass across them steps sideways
+as well, which lays the nine defaults out as a grid. With captions at their
+default size they will still overlap; the point is only that a new one is
+visibly somewhere else, not that nine of them arrive pre-arranged.
 
 A pill over the preview decides what drag and pinch move. With one caption it
 reads **Photo / Text**; with more it lists them by number, so the layer being
 dragged can be switched without opening a drawer. It is independent of the
 drawers — collapse them and position a caption against a full-size preview. It
 disappears, and control returns to the photo, when no caption has any text.
+
+Because it floats over the picture, the pill is held to about two thirds of the
+stage and scrolls past that rather than growing across the whole top of the
+photo — a full nine would otherwise take 337 px of a 390 px-wide phone.
+Selecting a caption scrolls the pill to it, by setting `scrollLeft` rather than
+by `scrollIntoView`, which walks up the tree and scrolls the page as well.
 
 The caption is drawn **after** the image has been reduced to four colours, using
 palette inks directly. Putting it through the dither instead would smear the

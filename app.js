@@ -1113,10 +1113,18 @@ const FONTS = {
   jpKlee:   '400 {S}px Klee, "Klee One", "Toppan Bunkyu Midashi Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif',
 };
 
-const MAX_TEXTS = 3;
-/* Stagger the default position so a second and third caption do not land on
-   top of the first. */
+/* Nine keeps every tab chip a single digit, which is what lets the tab row
+   stay the same size whatever is on it. */
+const MAX_TEXTS = 9;
+/* Stagger the default position so a new caption does not land exactly on top
+   of one already there: three heights, and each further pass across them steps
+   sideways too, so the nine defaults are a grid rather than a pile. */
 const LAYER_Y = [0.8, 0.5, 0.2];
+const LAYER_X = [0.5, 0.66, 0.34];
+const layerHome = i => ({
+  x: LAYER_X[Math.floor(i / LAYER_Y.length) % LAYER_X.length],
+  y: LAYER_Y[i % LAYER_Y.length],
+});
 
 function newLayer(i) {
   return {
@@ -1126,7 +1134,7 @@ function newLayer(i) {
     outline: 2,          // panel pixels, outside the glyph
     color: 1,            // palette index
     outlineColor: 0,
-    x: 0.5, y: LAYER_Y[i] !== undefined ? LAYER_Y[i] : 0.5,
+    x: layerHome(i).x, y: layerHome(i).y,
     angle: 0,            // degrees, clockwise
     vertical: false,     // one character per line
     bmp: null,           // {w, h, mask, idx} in panel pixels
@@ -1295,6 +1303,14 @@ function renderTargetPill() {
     const on = b.dataset.pick === sel;
     b.classList.toggle('is-active', on);
     b.setAttribute('aria-checked', String(on));
+    /* Past a few captions the pill is wider than the preview and scrolls, so
+       the one being edited has to be brought into view. scrollIntoView is no
+       good here: it walks up and scrolls the page as well. */
+    if (on && pill.scrollWidth > pill.clientWidth) {
+      const l = b.offsetLeft, r = l + b.offsetWidth;
+      if (l < pill.scrollLeft) pill.scrollLeft = l - 2;
+      else if (r > pill.scrollLeft + pill.clientWidth) pill.scrollLeft = r - pill.clientWidth + 2;
+    }
   });
 }
 
