@@ -22,27 +22,28 @@ standalone PWA and works offline.
 
 ## Panel sizes
 
-| Size      | Composed landscape | Composed portrait | Always exported |
-|-----------|--------------------|-------------------|-----------------|
-| 296 × 128 | 296 × 128          | 128 × 296         | **296 × 128**   |
-| 400 × 300 | 400 × 300          | 300 × 400         | **400 × 300**   |
+| Size      | Composed landscape | Composed portrait |
+|-----------|--------------------|-------------------|
+| 296 × 128 | 296 × 128          | 128 × 296         |
+| 400 × 300 | 400 × 300          | 300 × 400         |
 
-A panel's frame buffer is a fixed landscape raster — a 296 × 128 module is 296
-across however you hang it on the wall. Composing in portrait is a framing
-choice, not a different panel, so **exports are always written in the panel's
-native landscape orientation**, with a portrait composition turned a quarter
-turn on the way out. The preview stays portrait; only the file rotates.
+**The file is written the way the picture was composed.** Compose portrait and
+you get a 128 × 296 file; what is on screen is what is in the export, at exact
+panel resolution.
 
-Which way it turns depends on how the module is mounted, so the save sheet
-offers **↻ CW** or **↺ CCW** whenever the composition is portrait, and states
-the sizes outright — *Composed 128×296, exported 296×128*.
+It used to work the other way. A panel's frame buffer is a fixed landscape
+raster — a 296 × 128 module is 296 across however you hang it on the wall — so
+a portrait composition was turned a quarter turn on the way out, with a **↻ CW
+/ ↺ CCW** picker in the save sheet for which way. The reasoning was sound and
+the result was not: it put a turn between the preview and the file, and the
+right place to decide how a picture meets the panel is the uploader that talks
+to the panel.
 
 Switching between landscape and portrait turns the **whole composition** with
 the frame: the crop rotates a quarter turn and every caption carries its
 position and its own angle around with it, so a layout you built in one
-orientation arrives intact in the other rather than sideways. Note that this
-turn stacks with the export turn above — a portrait composition is rotated once
-for the frame and once again on the way into the landscape file.
+orientation arrives intact in the other rather than sideways. That is the only
+turn there is now.
 
 The camera frame is centre-cropped to the panel's aspect ratio and downscaled in
 halving steps (rather than one big jump) so fine detail survives the trip down to
@@ -577,7 +578,7 @@ is kept as PNG however big it turns out.
   image that merely happens to be 4-colour.
 
 *Save to Photos* and *Download PNG* are built from the same bytes, so the two
-can never disagree — including the portrait quarter turn.
+can never disagree.
 
 Save to Photos is feature-detected: it needs the Web Share API with file
 support, which is not universal and, being a powerful API, also requires a

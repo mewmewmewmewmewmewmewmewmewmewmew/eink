@@ -265,13 +265,6 @@
 <div id="save-sheet" class="overlay" hidden>
   <div class="sheet">
     <div class="sheet-title">Save <span id="shot-meta"></span></div>
-    <div id="export-rot" class="export-row" hidden>
-      <span id="export-note"></span>
-      <div class="seg seg-sm" role="radiogroup" aria-label="How a portrait composition is turned for export">
-        <button class="seg-btn is-active" data-exportrot="cw" role="radio" aria-checked="true">↻ CW</button>
-        <button class="seg-btn" data-exportrot="ccw" role="radio" aria-checked="false">↺ CCW</button>
-      </div>
-    </div>
     <div class="save-row">
       <button id="btn-save-project" class="btn" disabled>Save</button>
       <button id="btn-save-new" class="btn">Save new</button>
@@ -342,7 +335,7 @@
         <input type="file" id="chk-input" accept="image/*" hidden></label>
       <pre id="chk-out" hidden></pre>
 
-      <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Save project</b> keeps the shot editable — the background, the crop and every caption come back when you reopen it from the folder button. Point it at a server under Saved projects → Settings and projects live there rather than in browser storage, which phones are free to evict; the device is used only as a fallback when the server cannot be reached. <b>Download PNG</b> writes the image at exact panel resolution. Exports are always in the panel's native landscape frame — a portrait composition is turned a quarter turn on the way out, in whichever direction you pick in the save sheet, since the panel's buffer is the same shape however you mount it. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
+      <p><b>Save to Photos</b> goes through the system share sheet, which is the only route into the iOS photo album from a web page. <b>Save project</b> keeps the shot editable — the background, the crop and every caption come back when you reopen it from the folder button. Point it at a server under Saved projects → Settings and projects live there rather than in browser storage, which phones are free to evict; the device is used only as a fallback when the server cannot be reached. <b>Download PNG</b> writes the image at exact panel resolution, the way it was composed — a portrait composition is saved portrait, and turning it to suit the panel is left to whatever uploads it. <b>.bin</b> is packed 2 bits per pixel, MSB first, rows padded to whole bytes, with <code>0=black, 1=white, 2=yellow, 3=red</code>.</p>
     </div>
   </div>
 </div>
